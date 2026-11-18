@@ -1,0 +1,47 @@
+# One newspaper. Everything about the page lives here; `bjook build` reads it.
+
+kind   = "paper"
+title  = "Untitled"
+author = ""
+
+[page]                  # printnewspaper.com tabloid: 260 x 370 mm, no bleed
+width   = "260mm"
+height  = "370mm"
+top     = "15mm"        # the printer keeps 10 mm white at every edge;
+bottom  = "20mm"        # a margin under that warns. The page number sits here
+inside  = "15mm"        # the fold side (a spread has none)
+outside = "15mm"
+
+[type]
+text    = "Newsreader"      # a family name as the font itself spells it
+display = "Libre Franklin"  # headlines, captions, labels
+title   = ""                # the masthead; empty = same as display
+size    = "10pt"            # the printer's floor is 7-8pt; captions are 0.8 of this
+leading = "14pt"
+fonts_dir = "~/Code/libreFontLibrary/Families"
+
+[paper]
+columns  = 4            # the grid: .span-1 to .span-4, .cols-2 to .cols-4
+gutter   = "5mm"
+edition  = ""           # e.g. "No. 1 · November 2026"; {edition} works in [head]
+smart_quotes = true
+
+[color]
+mode   = "gray"         # "gray": photos print black and white, accent = ink
+                        # "color": photos keep their colour, accent applies
+ink    = "device-cmyk(0 0 0 1)"         # text and rules: black ink only
+black  = "device-cmyk(0.3 0.3 0.3 1)"   # big dark areas: four-colour black
+accent = ""             # colour mode only, as device-cmyk(c m y k)
+
+# The page number and running head take the same settings as in a book of
+# poems: font, size, weight, position (top|bottom - outside|inside|center),
+# from_edge or drop, css.
+[folio]
+position  = "bottom-outside"
+from_edge = "12mm"
+
+[head]                  # leave verso and recto empty for none
+verso     = "{title}"
+recto     = "{title}"
+position  = "bottom-center"
+from_edge = "12mm"

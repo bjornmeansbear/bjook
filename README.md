@@ -1,15 +1,32 @@
 # Bjook
 
-Poems as plain text in, three things out: a typeset PDF in reading order, a
-booklet PDF imposed for saddle stitch, and a preview of the book as facing
-pages that reloads when you save.
+Plain text in, a typeset PDF out, with a preview of the pages as facing
+spreads that reloads when you save. Two kinds of book, set by `kind` in
+`book.toml`:
 
-The design reasoning lives in `RULES.md`, **"Bjook"**. This file is how to
-run it.
+- **poems** (the default): also a booklet imposed for saddle stitch, and the
+  book as a website.
+- **paper**: a tabloid newspaper, composed page by page (see "Newspapers"
+  below).
+
+The design reasoning lives in `~/Code/color-system-and-guidelines/RULES.md`,
+**"Bjook"**. This file is how to run it.
 
 ## Built with it
 
 - `~/Code/a-poem-a-day` — 56 poems from the are.na channel of the same name
+- `~/Code/chair-ness/paper` — the Chair-ness newspaper, first edition
+
+## The code
+
+| | |
+|---|---|
+| `bjook.py` | The commands. Reads `kind` and hands off. |
+| `book.py` | What every kind shares: `book.toml`, typographer's marks, fonts, `@page` rules and margin boxes, rendering, the preview, snapshots, `watch`. |
+| `poems.py`, `book.css` | Poems: the book, the booklet, the specimen, the website (`site.css`). |
+| `paper.py`, `paper.css` | Newspapers. |
+| `kit.css` | A copy of the kit's, for the website. Re-copy it from `~/Code/color-system-and-guidelines` when the kit changes. |
+| `template/<kind>/` | What `bjook new` copies. |
 
 ## Setup, once
 
@@ -17,19 +34,21 @@ run it.
 pipx install weasyprint
 pipx inject weasyprint pypdf
 brew install poppler          # pdftoppm, for the preview images
+brew install pandoc           # paper: Markdown into pages
 ```
 
 `./bjook` runs `bjook.py` on the Python inside that pipx venv. An alias
 saves typing:
 
 ```sh
-alias bjook=~/Code/color-system-and-guidelines/tools/bjook/bjook
+alias bjook=~/Code/bjook/bjook
 ```
 
 ## Use
 
 ```sh
 bjook new ~/Code/my-book --channel <are.na-slug>
+bjook new ~/Code/my-paper --kind paper
 cd ~/Code/my-book
 
 bjook fetch                 # text blocks -> poems/*.md, listed in order.txt
@@ -79,6 +98,46 @@ replaces local text with the channel's.
 
 The build pads the page count to a multiple of four and lists any poem that
 runs past one page.
+
+## Newspapers
+
+Built for the tabloid at printnewspaper.com: 260 × 370 mm, a multiple of
+four pages, single pages in reading order, no bleed, 10 mm of white at
+every edge except across the fold of a spread.
+
+| | |
+|---|---|
+| `book.toml` | `kind = "paper"`, then page, type, `[paper]` (columns, gutter, edition) and `[color]`. The template lists every setting. |
+| `order.txt` | One page file per line. After the name, `plain` drops the page number and running head, and `spread` lays the file across two facing pages. `#` starts a comment. |
+| `pages/*.html` | One page each, a fragment of HTML. HTML comments are notes and don't print. |
+| `style.css` | This paper's overrides, after the tool's `paper.css`. |
+
+On a page:
+
+- **The grid:** `<div class="grid">` with `.span-1` … `.span-N` children.
+- **Running text:** `<article class="cols-3" data-md="../text/essay.md"></article>`
+  pulls in a Markdown file (path from the paper's folder) through pandoc.
+  `data-until="Check:"` stops at the first line starting with that, so notes
+  under a draft stay out. Text flows column to column and on to the next
+  page. Keep long text **out of** a `.grid`: WeasyPrint can't break a grid
+  item across pages and crashes.
+- **Photos:** `<img src="images/chair-01.jpg">`. Keep the originals in
+  colour; the build writes the press copy to `build/img/`. Until a photo
+  exists: `<div class="placeholder" style="height: 80mm">What goes here</div>`.
+- **Structure:** `hr`, `.rule-heavy`, `.box`. `.reverse` is light text on
+  four-colour black. Type: `.headline`, `.kicker`, `.deck`, `.byline`,
+  `.pull`, `figcaption`.
+
+`[color] mode = "gray"` makes every photo black and white, then CMYK.
+`"color"` keeps the colour. Text and rules are black ink only either way.
+
+The build reports which pages each file landed on, and warns about: a
+spread that isn't the middle sheet, a spread cut off at its foot, a blank
+page the layout had to insert, padding to reach a multiple of four, a margin
+inside the printer's 10 mm, and a photo under 200 ppi at its printed size.
+`build/paper.html` is the HTML WeasyPrint saw, for debugging.
+
+`fetch`, `specimen` and `site` are for poems only so far.
 
 ## Publishing the site
 

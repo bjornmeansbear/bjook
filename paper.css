@@ -1,0 +1,149 @@
+/* Bjook paper — a newspaper. Page size, margins, fonts, the page number and
+   the colour tokens come from the paper's book.toml (bjook writes those
+   rules above this file). A paper overrides anything here in its own
+   style.css. See RULES.md "Bjook".
+
+   Colour is four tokens, so the first edition can be black and white and a
+   later one colour without touching a layout:
+     --ink     text and rules, black ink only
+     --black   large dark areas, four-colour black
+     --accent  = --ink in gray mode
+   No flat grey or black-ink tint fills: on an inkjet press they band. */
+
+html { font-size: var(--size); }
+
+body {
+  margin: 0;
+  font-family: var(--font-text), serif;
+  font-size: var(--size);
+  line-height: var(--leading);
+  color: var(--ink);
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures;
+  hyphens: auto;
+  orphans: 2;
+  widows: 2;
+}
+
+a { color: inherit; text-decoration: none; }
+img { display: block; width: 100%; height: auto; }
+figure { margin: 0; break-inside: avoid; }
+
+/* ---- Pages: every file in order.txt starts a new page ---- */
+.sheet { break-before: page; }
+.sheet.plain { page: plain; }
+.sheet.blank { page: plain; height: 1pt; }
+
+/* A spread: the same wide box on two pages, each clipped to its half.
+   bjook sets the widths; the height is the text block's. */
+.spread {
+  page: spread;
+  overflow: hidden;
+  height: calc(var(--page-h) - var(--page-top) - var(--page-bottom));
+}
+.spread-left { break-before: left; }
+.spread-right { break-before: page; }
+
+/* ---- The grid every page is laid out on ---- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(var(--columns), 1fr);
+  column-gap: var(--gutter);
+  row-gap: var(--leading);
+}
+.span-1 { grid-column: span 1; }
+.span-2 { grid-column: span 2; }
+.span-3 { grid-column: span 3; }
+.span-4 { grid-column: span 4; }
+.span-5 { grid-column: span 5; }
+.span-6 { grid-column: span 6; }
+.span-all { grid-column: 1 / -1; }
+
+/* Running text across columns. On a page it flows column to column, then on
+   to the next page. */
+.cols-2, .cols-3, .cols-4, .cols-5 { column-gap: var(--gutter); column-fill: balance; }
+.cols-2 { column-count: 2; }
+.cols-3 { column-count: 3; }
+.cols-4 { column-count: 4; }
+.cols-5 { column-count: 5; }
+.cols-all { column-span: all; }
+
+/* ---- Text ---- */
+p { margin: 0; }
+p + p { text-indent: 1em; }
+h1, h2, h3, h4 {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 700;
+  margin: 0;
+  break-after: avoid;
+  hyphens: manual;
+}
+.cols-2 > h1, .cols-3 > h1, .cols-4 > h1, .cols-5 > h1 { column-span: all; }
+
+.headline {
+  font-family: var(--font-display), sans-serif;
+  font-size: 3.2em;
+  line-height: calc(var(--leading) * 3);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 var(--leading);
+}
+article > h1 {
+  font-size: 2.4em;
+  line-height: calc(var(--leading) * 2);
+  margin: 0 0 var(--leading);
+}
+article h2 {
+  font-size: 1em;
+  line-height: var(--leading);
+  margin: var(--leading) 0 0;
+}
+.kicker {
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.8em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 0;
+}
+.deck {
+  font-size: 1.4em;
+  line-height: calc(var(--leading) * 1.5);
+  margin: 0 0 var(--leading);
+}
+.byline, .caption, figcaption {
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.8em;                  /* 8pt at 10pt text: the printer's floor */
+  line-height: calc(var(--leading) * 0.85);
+}
+figcaption { margin-top: calc(var(--leading) * 0.5); }
+blockquote { margin: var(--leading) 0; font-style: italic; }
+.pull {
+  font-family: var(--font-display), sans-serif;
+  font-size: 1.6em;
+  line-height: calc(var(--leading) * 2);
+  font-weight: 700;
+  break-inside: avoid;
+  margin: var(--leading) 0;
+}
+ol, ul { margin: 0 0 var(--leading); padding-left: 1.4em; }
+
+/* ---- Structure: rules, not boxes or tints ---- */
+hr, .rule { border: 0; border-top: 0.75pt solid var(--ink); margin: var(--leading) 0; }
+.rule-heavy { border-top: 3pt solid var(--ink); }
+.box { border: 0.75pt solid var(--ink); padding: calc(var(--leading) * 0.5) 3mm; }
+.reverse { background: var(--black); color: var(--paper); }   /* four-colour black, never ink-only */
+
+/* ---- A photo that doesn't exist yet: a ruled frame with a label ---- */
+.placeholder {
+  border: 0.75pt solid var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.8em;
+  line-height: calc(var(--leading) * 0.85);
+  padding: 3mm;
+  box-sizing: border-box;
+}

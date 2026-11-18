@@ -1,0 +1,7 @@
+# The paper's pages, top to bottom: one file in pages/ per line.
+# After the name: `plain` drops the page number and running head;
+# `spread` lays the file across two facing pages. # starts a comment.
+# The total is padded to a multiple of four.
+
+front.html   plain
+back.html
