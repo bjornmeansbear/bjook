@@ -321,6 +321,20 @@ def linked(text):
                   text)
 
 
+# The shelf's "Made with Bjook" page. Written by him; edit here, not in the
+# built site.
+ABOUT = [
+    "I made these books with Bjook, a tool I wrote for myself. I write each "
+    "poem as a plain text file. Bjook sets them in a typeface, lays out the "
+    "pages, and makes three things: a PDF of the book, a booklet to print "
+    "double-sided, fold and staple, and this website. It makes newspapers too.",
+    'The code is on GitHub: <a href="https://github.com/bjornmeansbear/bjook">'
+    "github.com/bjornmeansbear/bjook</a>",
+    "It fits how I make books and probably nobody else\u2019s. Fork it if it is "
+    "useful to you. I can\u2019t offer support.",
+]
+
+
 def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
     """The book as a website: a front page with the contents, one page per
     poem, the PDFs to download, and a shelf page listing every book that has
@@ -436,8 +450,16 @@ def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
     (out / "index.html").write_text(web_page(
         shelf_title,
         f'<main><h1 class="site-title">{inline(shelf_title, smart)}</h1>'
-        f'<ul class="shelf">{shelf}<li class="rest" role="presentation"></li></ul></main>',
+        f'<ul class="shelf">{shelf}<li class="rest" role="presentation"></li></ul>'
+        '<p class="shelf-note"><a href="bjook.html">Made with Bjook</a></p></main>',
         ["kit.css", "bjook.css"] + [f'{b["path"]}/fonts.css' for b in books], frame=""))
+    (out / "bjook.html").write_text(web_page(
+        "Bjook", "\n".join([
+            f'<header class="head"><a href="index.html">{inline(shelf_title, smart)}</a></header>',
+            "<main><h1>Bjook</h1>",
+            *(f"<p>{p}</p>" for p in ABOUT),
+            "</main>"]),
+        ["kit.css", "bjook.css"], description="The tool that makes these books."))
     print(f"-> {dest / 'index.html'}\n   {len(poems)} poems, {len(pages)} pages, "
           f"{len(list((dest / 'fonts').iterdir()))} fonts")
     print(f"-> {out / 'index.html'}\n   the shelf: {len(books)} book{'s' if len(books) != 1 else ''}")

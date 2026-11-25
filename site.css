@@ -236,3 +236,9 @@ a:hover { color: var(--color-accent-hover); }
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+/* Under the shelf: the line that links to the Bjook page. */
+.shelf-note {
+  margin: 0;
+  padding: 1.5rem clamp(1.5rem, 6vw, 6rem) 3rem;
+}
