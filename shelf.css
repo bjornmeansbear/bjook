@@ -46,6 +46,7 @@ em { font-style: italic; }
   display: flex; flex-direction: column; justify-content: flex-end;
   padding: 0.5in; box-sizing: border-box;
 }
+.title-image { position: absolute; left: 50%; top: 2in; width: 2.5in; transform: translateX(-50%); }
 .title-page h1 { font-size: 54pt; line-height: 1; letter-spacing: -0.02em; }
 .title-page .date { font-size: 12pt; line-height: 1.2; margin: 6pt 0 0; }
 

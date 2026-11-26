@@ -48,6 +48,7 @@ DEFAULTS = {
                                     # "index" is the index, an image gets a page to itself,
                                     # and the last one ends the book
         "index_title": "Index",
+        "title_image": "",          # an image on the title page, above the title (a bookplate, a mark)
         "running": "",              # a text file: one line of type that runs across the top of
                                     # every shelf spread, through the fold, cut wherever a page
                                     # ends, sized to start on the first spread and end on the last
@@ -288,7 +289,11 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
     page_w = to_pt(cfg["page"]["width"])
     edge = to_pt(s["edge"])
     e = html.escape
-    pages = [f'<section class="shelf-page right title-page"><h1>{e(cfg["title"])}</h1>'
+    plate = s["title_image"]
+    if plate and not (root / plate).is_file():
+        die(f"[shelf] title_image: {plate} doesn't exist")
+    plate_html = f'<img class="title-image" src="{e(plate)}" alt="">' if plate else ""
+    pages = [f'<section class="shelf-page right title-page">{plate_html}<h1>{e(cfg["title"])}</h1>'
              f'<p class="date">{e(date)}</p></section>']
     lines = "".join(f'<div class="line" style="top:{y:.2f}pt"></div>' for y in s["shelves"])
     per = len(s["shelves"])
