@@ -48,6 +48,13 @@ DEFAULTS = {
                                     # "index" is the index, an image gets a page to itself,
                                     # and the last one ends the book
         "index_title": "Index",
+        "running": "",              # a text file: one line of type that runs across the top of
+                                    # every shelf spread, through the fold, cut wherever a page
+                                    # ends, sized to start on the first spread and end on the last
+        "running_font": "",         # empty = [type] text
+        "running_weight": 600,
+        "running_caps": True,
+        "running_top": "0.45in",    # the top of the line, from the top of the page
         "smart_quotes": True,
     },
     "cover": {
@@ -215,7 +222,33 @@ def md_page(path, cfg, fill):
     return f'<section class="back {re.sub(r"[^a-z0-9-]", "", path.stem.lower())}">{out}</section>'
 
 
-def book_html(cfg, root, books, shelf, date, blanks=0):
+def running_line(cfg, root, spreads, page_w, faces):
+    """The running line: its text, family, weight and the size that makes
+    it exactly as long as all the shelf spreads laid end to end."""
+    s = cfg["shelf"]
+    path = root / s["running"]
+    if not path.is_file():
+        die(f"[shelf] running: {path} doesn't exist")
+    text = " ".join(path.read_text().split())
+    if s["running_caps"]:
+        text = text.upper()
+    family = s["running_font"] or cfg["type"]["text"]
+    # Lay the line out once at 100pt and measure it, kerning and all.
+    probe = (f"<style>{faces}</style><span style=\"display:inline-block;white-space:nowrap;"
+             f"font-family:'{alias(family)}';font-weight:{s['running_weight']};font-size:100pt\">"
+             f"{html.escape(text)}</span>")
+    def widest(box):
+        w = box.width if getattr(box, "element_tag", None) == "span" else 0
+        return max([w] + [widest(c) for c in getattr(box, "children", [])])
+    from weasyprint import HTML
+    page = HTML(string=probe).render().pages[0]
+    width_at_100 = widest(page._page_box) * 0.75          # css px -> pt
+    edge = to_pt(s["edge"])
+    size = (spreads * 2 * page_w - 2 * edge) / width_at_100 * 100
+    return text, family, size
+
+
+def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
     s = cfg["shelf"]
     page_w = to_pt(cfg["page"]["width"])
     edge = to_pt(s["edge"])
@@ -225,6 +258,18 @@ def book_html(cfg, root, books, shelf, date, blanks=0):
     lines = "".join(f'<div class="line" style="top:{y:.2f}pt"></div>' for y in s["shelves"])
     per = len(s["shelves"])
     rows = shelf.rows(2 * page_w - 2 * edge)
+    spreads = -(-len(rows) // per)
+    run = running_line(cfg, root, spreads, page_w, faces) if s["running"] else None
+    run_size = run[2] if run else 0
+
+    def running(offset):
+        # The whole line on every page, shifted left by how far into the
+        # book this page starts; the page clips the rest.
+        if not run:
+            return ""
+        return (f'<div class="running" style="left:{edge - offset:.2f}pt;top:{to_pt(s["running_top"]):.2f}pt;'
+                f"font-family:'{alias(run[1])}';font-weight:{s['running_weight']};font-size:{run[2]:.2f}pt\">"
+                f'{e(run[0])}</div>')
     for i in range(0, len(rows), per):
         left_no = len(pages) + 1
         layout = {"left": [], "right": []}
@@ -237,8 +282,9 @@ def book_html(cfg, root, books, shelf, date, blanks=0):
                 if x + w > page_w:
                     layout["right"].append(shelf.spine(b, x - page_w, y, left_no + 1))
                 x += w - 0.5            # neighbours share an outline
-        for side in ("left", "right"):
-            pages.append(f'<section class="shelf-page {side}">{lines}{"".join(layout[side])}'
+        for k, side in enumerate(("left", "right")):
+            offset = (i // per * 2 + k) * page_w
+            pages.append(f'<section class="shelf-page {side}">{lines}{running(offset)}{"".join(layout[side])}'
                          f'<div class="folio {side}">{len(pages) + 1}</div></section>')
 
     fill = fills(cfg, books, shelf, date)
@@ -260,7 +306,7 @@ def book_html(cfg, root, books, shelf, date, blanks=0):
             back.append(md_page(root / item, cfg, fill))
     pad = "".join('<section class="back pad"></section>' for _ in range(blanks))
     body = "".join(pages) + "".join(back[:-1]) + pad + back[-1]
-    return body, len(rows)
+    return body, len(rows), run_size
 
 
 def cover_html(cfg, root, books, shelf, date, pages, faces):
@@ -327,7 +373,7 @@ def build(root, cfg, snap=None, quiet=False):
         date = datetime.date.fromisoformat(data["generated"]).strftime("%-d %B %Y")
     out = root / "build"
     out.mkdir(exist_ok=True)
-    faces = all_faces(book_families(cfg), cfg["type"]["fonts_dir"]) + "\n" + face_css(cfg, root)
+    faces = all_faces(book_families(cfg) + [s["running_font"]] * bool(s["running_font"]), cfg["type"]["fonts_dir"]) + "\n" + face_css(cfg, root)
     head = page_css(cfg, {"--ink": "#000", "--page-w": cfg["page"]["width"],
                            "--page-h": cfg["page"]["height"]}, s["smart_quotes"]) + """
 @page shelf { margin: 0; %(off)s }
@@ -337,14 +383,14 @@ def build(root, cfg, snap=None, quiet=False):
 
     def make(blanks):
         shelf = Shelf(cfg, books, s["scale"], to_pt(s["min_spine"]))
-        body, n_rows = book_html(cfg, root, books, shelf, date, blanks)
+        body, n_rows, run_size = book_html(cfg, root, books, shelf, date, blanks, faces)
         page = document(cfg, body, faces, root, "shelf.css", head)
-        return shelf, n_rows, page, render(page, root)
+        return shelf, n_rows, run_size, page, render(page, root)
 
-    shelf, n_rows, page, doc = make(0)
+    shelf, n_rows, run_size, page, doc = make(0)
     blanks = len(doc.pages) % 2
     if blanks:
-        shelf, n_rows, page, doc = make(blanks)
+        shelf, n_rows, run_size, page, doc = make(blanks)
     (out / "book.html").write_text(page)
     pdf = out / f"{cfg['slug']}.pdf"
     doc.write_pdf(pdf)
@@ -362,7 +408,8 @@ def build(root, cfg, snap=None, quiet=False):
     write_preview(cfg, out, rasterize(pdf, out / "pages", dpi=72), stamp, spec)
     if not quiet:
         print(f"-> {pdf}\n   {total} pages: {len(books)} books on {n_rows} shelves, "
-              f"{len(shelf.black)} black spines" + (", 1 blank page before the last" if blanks else ""))
+              f"{len(shelf.black)} black spines" + (", 1 blank page before the last" if blanks else "")
+              + (f", the running line at {run_size:.1f}pt" if run_size else ""))
         print(f"-> {cover_pdf}\n   {info['W']:.3f} × {info['H']:.3f}in with bleed, spine {info['spine']:.3f}in, "
               f"every book at {info['scale']:.3f} on {info['shelves']} shelves")
         print(f"-> {out / 'preview.html'}")
