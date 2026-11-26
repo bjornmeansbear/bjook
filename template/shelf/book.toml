@@ -1,0 +1,51 @@
+# One shelf book. Everything about the page lives here; `bjook build` reads it.
+# The text is in essay.md, colophon.md and cover.md.
+
+kind   = "shelf"
+title  = "Untitled"
+author = ""
+
+[page]                  # margins are for the pages after the shelf
+width   = "5.5in"
+height  = "8.5in"
+top     = "0.5in"
+bottom  = "0.55in"
+inside  = "0.45in"
+outside = "0.45in"
+
+[type]
+text    = "Work Sans"   # a family name as the font itself spells it
+size    = "10pt"        # the essay; the index and colophon are set smaller in shelf.css
+leading = "14pt"
+fonts_dir = "~/Code/libreFontLibrary/Families"
+
+[folio]
+size      = "7pt"
+position  = "bottom-center"
+from_edge = "0.3in"
+
+[shelf]
+# The catalogue: JSON, either a list of books or {"generated": "YYYY-MM-DD",
+# "books": [...]}. Each book needs slug, title, height and thickness (inches)
+# and face (a key under [faces]); authors, tags and sized are optional.
+data   = "books.json"
+date   = ""             # empty = the catalogue's "generated" date
+mode   = "endless"      # one shelf through the whole book; "wall" = two shelves a spread
+scale  = 0              # 0 = by mode (0.4 endless, 0.25 wall)
+black_tags = []         # books with any of these tags print as black spines
+back   = ["essay.md", "index", "colophon.md"]   # after the shelf; the last ends the book
+
+[cover]
+text   = "cover.md"     # the card on the back cover
+bleed  = "0.125in"
+caliper = 0.0025        # inches per page, for the spine width; ask the printer
+
+# One table per typeface, keyed by the catalogue's "face" field. The font
+# comes from css (an @font-face stylesheet), file (one font file), or
+# neither (looked up in [type] fonts_dir). designer and url go in the colophon.
+[faces.main]
+family = "Work Sans"
+weight = 600
+scale  = 1              # type size multiplier, to even out faces that run small or large
+designer = "Wei Huang"
+url = "fonts.google.com/specimen/Work+Sans"

@@ -1,13 +1,15 @@
 # Bjook
 
 Plain text in, a typeset PDF out, with a preview of the pages as facing
-spreads that reloads when you save. Two kinds of book, set by `kind` in
+spreads that reloads when you save. Three kinds of book, set by `kind` in
 `book.toml`:
 
 - **poems** (the default): also a booklet imposed for saddle stitch, and the
   book as a website.
 - **paper**: a tabloid newspaper, composed page by page (see "Newspapers"
   below).
+- **shelf**: a catalogue of books drawn as spines on a shelf, with an index,
+  a colophon and a wraparound cover (see "Shelves" below).
 
 The design reasoning lives in `~/Code/color-system-and-guidelines/RULES.md`,
 **"Bjook"**. This file is how to run it.
@@ -16,6 +18,7 @@ The design reasoning lives in `~/Code/color-system-and-guidelines/RULES.md`,
 
 - `~/Code/a-poem-a-day` — 56 poems from the are.na channel of the same name
 - `~/Code/chair-ness/paper` — the Chair-ness newspaper, first edition
+- `~/Code/library/book` — *A Library*, the books on my office shelves, from library.wjerk.shop
 
 ## The code
 
@@ -25,6 +28,7 @@ The design reasoning lives in `~/Code/color-system-and-guidelines/RULES.md`,
 | `book.py` | What every kind shares: `book.toml`, typographer's marks, fonts, `@page` rules and margin boxes, rendering, the preview, snapshots, `watch`. |
 | `poems.py`, `book.css` | Poems: the book, the booklet, the specimen, the website (`site.css`). |
 | `paper.py`, `paper.css` | Newspapers. |
+| `shelf.py`, `shelf.css` | Shelves: spines, index, colophon, cover. |
 | `kit.css` | A copy of the kit's, for the website. Re-copy it from `~/Code/color-system-and-guidelines` when the kit changes. |
 | `template/<kind>/` | What `bjook new` copies. |
 
@@ -136,6 +140,29 @@ spread that isn't the middle sheet, a spread cut off at its foot, a blank
 page the layout had to insert, padding to reach a multiple of four, a margin
 inside the printer's 10 mm, and a photo under 200 ppi at its printed size.
 `build/paper.html` is the HTML WeasyPrint saw, for debugging.
+
+## Shelves
+
+A catalogue drawn as spines standing on a shelf, A to Z, at a fraction of
+their real size, each spine set in its book's own typeface. Planned by
+spread: a shelf runs straight through the fold and sits at the same height
+on every page, so `mode = "endless"` reads as one shelf through the whole
+book, and `"wall"` as a bookcase two shelves high on each spread.
+
+| | |
+|---|---|
+| `book.toml` | `kind = "shelf"`, then page, type, `[shelf]` (the data, mode, scale, `black_tags`, what comes after the shelf), `[cover]` and one `[faces.<key>]` per typeface. The template lists every setting. |
+| `essay.md`, `colophon.md` | Pages after the shelf, as Markdown, in the order `[shelf] back` lists them, with `"index"` for the index. The last one ends the book. `{books}`, `{date}`, `{scale}`, `{sizes}`, `{black}` fill themselves in; `{faces}` on its own line lists the typefaces, each set in itself. |
+| `cover.md` | The card on the back cover. |
+| `style.css` | This book's overrides, after the tool's `shelf.css`. |
+
+Output: `build/<slug>.pdf`, the pages in reading order, padded to an even
+count so the last item lands on the last page; and `build/<slug>-cover.pdf`,
+back, spine and front as one sheet with bleed, every book at once at the
+largest scale that fits, with the title and the back text on label cards.
+The spine width comes from the page count and `[cover] caliper`. The build
+warns when the spine is too thin for type or the book too short to perfect
+bind.
 
 `fetch`, `specimen` and `site` are for poems only so far.
 

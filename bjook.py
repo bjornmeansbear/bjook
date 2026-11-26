@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 bjook — plain text -> a typeset PDF and a spread preview in the browser.
-Two kinds so far, set by `kind` in book.toml: poems (the default; also a
-saddle-stitch booklet and a website) and paper (a tabloid newspaper).
+Three kinds so far, set by `kind` in book.toml: poems (the default; also a
+saddle-stitch booklet and a website), paper (a tabloid newspaper) and shelf
+(a catalogue drawn as spines on a shelf, with a wraparound cover).
 
     bjook new ~/Code/my-book --channel <are.na-slug>
     bjook new ~/Code/my-paper --kind paper
@@ -28,8 +29,9 @@ from pathlib import Path
 import book
 import paper
 import poems
+import shelf
 
-KINDS = {"poems": poems, "paper": paper}
+KINDS = {"poems": poems, "paper": paper, "shelf": shelf}
 
 
 def kind_of(root):
@@ -67,7 +69,8 @@ def new(dest, kind, channel):
     if kind == "poems":
         (dest / "poems").mkdir(exist_ok=True)
     (dest / ".gitignore").write_text("build/\n.DS_Store\n")
-    then = "`bjook fetch` and `bjook build`" if kind == "poems" else "pages/ and order.txt, then `bjook watch`"
+    then = {"poems": "`bjook fetch` and `bjook build`", "paper": "pages/ and order.txt, then `bjook watch`",
+            "shelf": "[shelf] data and [faces], then `bjook watch`"}[kind]
     print(f"-> {dest}\n   edit book.toml, then {then}")
 
 
