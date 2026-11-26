@@ -223,29 +223,64 @@ def md_page(path, cfg, fill):
 
 
 def running_line(cfg, root, spreads, page_w, faces):
-    """The running line: its text, family, weight and the size that makes
-    it exactly as long as all the shelf spreads laid end to end."""
+    """The running line, broken into one piece per shelf spread at spaces,
+    so no word is cut by the trim at the outer edges. Within a spread it runs
+    straight through the fold, like the shelf. Each piece is spaced out to
+    the full width of its spread, so the line reads as one band. Returns
+    (pieces, family, size): the largest size at which the whole text fits
+    on the shelf spreads."""
     s = cfg["shelf"]
     path = root / s["running"]
     if not path.is_file():
         die(f"[shelf] running: {path} doesn't exist")
-    text = " ".join(path.read_text().split())
+    words = path.read_text().split()
     if s["running_caps"]:
-        text = text.upper()
+        words = [w.upper() for w in words]
     family = s["running_font"] or cfg["type"]["text"]
-    # Lay the line out once at 100pt and measure it, kerning and all.
-    probe = (f"<style>{faces}</style><span style=\"display:inline-block;white-space:nowrap;"
-             f"font-family:'{alias(family)}';font-weight:{s['running_weight']};font-size:100pt\">"
-             f"{html.escape(text)}</span>")
-    def widest(box):
-        w = box.width if getattr(box, "element_tag", None) == "span" else 0
-        return max([w] + [widest(c) for c in getattr(box, "children", [])])
+    # Measure every word, and a space, once at 100pt, kerning and all.
+    style = (f"display:inline-block;white-space:nowrap;font-family:'{alias(family)}';"
+             f"font-weight:{s['running_weight']};font-size:100pt")
+    probe = f"<style>{faces}</style>" + "".join(
+        f'<div><span style="{style}">{html.escape(w)}</span></div>' for w in [*words, "x x", "xx"])
+    seen = set()
+    def spans(box, out):
+        # A span shows up as several nested boxes; count each element once.
+        if getattr(box, "element_tag", None) == "span" and id(box.element) not in seen:
+            seen.add(id(box.element))
+            out.append(box.width * 0.75)                   # css px -> pt
+        for c in getattr(box, "children", []):
+            spans(c, out)
+        return out
     from weasyprint import HTML
-    page = HTML(string=probe).render().pages[0]
-    width_at_100 = widest(page._page_box) * 0.75          # css px -> pt
-    edge = to_pt(s["edge"])
-    size = (spreads * 2 * page_w - 2 * edge) / width_at_100 * 100
-    return text, family, size
+    widths = []
+    for pg in HTML(string=probe).render().pages:
+        spans(pg._page_box, widths)
+    *word_w, xx_space, xx = widths
+    space = xx_space - xx
+    room = 2 * page_w - 2 * to_pt(s["edge"])
+    n_pages = spreads
+
+    def pack(size):
+        k = size / 100
+        pieces, line, used = [], [], 0
+        for w, ww in zip(words, word_w):
+            need = ww * k + (space * k if line else 0)
+            if line and used + need > room:
+                pieces.append(line)
+                line, used = [], 0
+                need = ww * k
+            line.append(w)
+            used += need
+        pieces.append(line)
+        return pieces
+    lo, hi = 4, 200
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if len(pack(mid)) <= n_pages else (lo, mid)
+    pieces = pack(lo)
+    if max(ww * lo / 100 for ww in word_w) > room:
+        die("[shelf] running: a word is wider than a page at any size that fits")
+    return [" ".join(p) for p in pieces], family, lo
 
 
 def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
@@ -262,14 +297,19 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
     run = running_line(cfg, root, spreads, page_w, faces) if s["running"] else None
     run_size = run[2] if run else 0
 
-    def running(offset):
-        # The whole line on every page, shifted left by how far into the
-        # book this page starts; the page clips the rest.
-        if not run:
+    def running(spread, k):
+        # This spread's piece of the line: whole words, spaced to fill the
+        # spread between its outer edges, drawn on both pages and clipped at
+        # the fold. The last piece sits flush left, where it ends.
+        if not run or spread >= len(run[0]):
             return ""
-        return (f'<div class="running" style="left:{edge - offset:.2f}pt;top:{to_pt(s["running_top"]):.2f}pt;'
+        last = spread == len(run[0]) - 1
+        n = spread
+        return (f'<div class="running{" last" if last else ""}" style="left:{edge - k * page_w:.2f}pt;'
+                f'width:{2 * page_w - 2 * edge:.2f}pt;'
+                f'top:{to_pt(s["running_top"]):.2f}pt;'
                 f"font-family:'{alias(run[1])}';font-weight:{s['running_weight']};font-size:{run[2]:.2f}pt\">"
-                f'{e(run[0])}</div>')
+                f'{e(run[0][n])}</div>')
     for i in range(0, len(rows), per):
         left_no = len(pages) + 1
         layout = {"left": [], "right": []}
@@ -283,8 +323,7 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
                     layout["right"].append(shelf.spine(b, x - page_w, y, left_no + 1))
                 x += w - 0.5            # neighbours share an outline
         for k, side in enumerate(("left", "right")):
-            offset = (i // per * 2 + k) * page_w
-            pages.append(f'<section class="shelf-page {side}">{lines}{running(offset)}{"".join(layout[side])}'
+            pages.append(f'<section class="shelf-page {side}">{lines}{running(i // per, k)}{"".join(layout[side])}'
                          f'<div class="folio {side}">{len(pages) + 1}</div></section>')
 
     fill = fills(cfg, books, shelf, date)

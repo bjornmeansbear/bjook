@@ -23,7 +23,8 @@ em { font-style: italic; }
   break-after: page;
 }
 .line { position: absolute; left: 0; right: 0; height: 2pt; background: #000; }
-.running { position: absolute; white-space: nowrap; line-height: 1; }
+.running { position: absolute; white-space: nowrap; line-height: 1; text-align: justify; text-align-last: justify; }
+.running.last { text-align-last: left; }
 .folio { position: absolute; bottom: 0.3in; font-size: 7pt; line-height: 1; }
 .folio.left { left: 0.2in; }
 .folio.right { right: 0.2in; }

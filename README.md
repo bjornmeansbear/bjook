@@ -154,7 +154,7 @@ book, and `"wall"` as a bookcase two shelves high on each spread.
 | `book.toml` | `kind = "shelf"`, then page, type, `[shelf]` (the data, mode, scale, `black_tags`, what comes after the shelf), `[cover]` and one `[faces.<key>]` per typeface. The template lists every setting. |
 | `essay.md`, `colophon.md` | Pages after the shelf, as Markdown, in the order `[shelf] back` lists them, with `"index"` for the index. The last one ends the book. `{books}`, `{date}`, `{scale}`, `{sizes}`, `{black}` fill themselves in; `{faces}` on its own line lists the typefaces, each set in itself. |
 | `cover.md` | The card on the back cover. |
-| `running.txt` | Optional, named by `[shelf] running`: one line of type across the top of every shelf spread, through the fold and cut wherever a page ends, sized so it starts on the first spread and ends on the last (after Agel and Fiore's paperbacks). |
+| `running.txt` | Optional, named by `[shelf] running`: one line of type across the top of every shelf spread, broken at spaces once per spread so no word meets a trimmed edge, running through the fold, spaced to fill each spread, and sized so it starts on the first spread and ends on the last (after Agel and Fiore’s paperbacks). `running_caps = false` keeps the text’s own case. |
 | `style.css` | This book's overrides, after the tool's `shelf.css`. |
 
 Output: `build/<slug>.pdf`, the pages in reading order, padded to an even
