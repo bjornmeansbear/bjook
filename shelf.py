@@ -45,7 +45,8 @@ DEFAULTS = {
         "min_spine": "6.5pt",       # the thinnest a spine is drawn
         "black_tags": [],           # books with any of these tags print as black spines
         "back": ["essay.md", "index", "colophon.md"],   # after the shelf, in order;
-                                    # "index" is the index; the last one ends the book
+                                    # "index" is the index, an image gets a page to itself,
+                                    # and the last one ends the book
         "index_title": "Index",
         "smart_quotes": True,
     },
@@ -250,6 +251,11 @@ def book_html(cfg, root, books, shelf, date, blanks=0):
                             f'{(", " + e(b["authors"][0])) if b.get("authors") else ""}</span></li>'
                             for b in books)
             back.append(f'<section class="back index"><h1>{e(s["index_title"])}</h1><ol>{rows_}</ol></section>')
+        elif Path(item).suffix.lower() in (".png", ".jpg", ".jpeg", ".svg", ".gif"):
+            # A picture: a page to itself, centred.
+            if not (root / item).is_file():
+                die(f"[shelf] back lists {item}, but it doesn't exist")
+            back.append(f'<section class="back picture"><img src="{e(item)}" alt=""></section>')
         else:
             back.append(md_page(root / item, cfg, fill))
     pad = "".join('<section class="back pad"></section>' for _ in range(blanks))
