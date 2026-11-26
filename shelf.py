@@ -58,6 +58,17 @@ DEFAULTS = {
         "running_top": "0.45in",    # the top of the line, from the top of the page
         "smart_quotes": True,
     },
+    "riso": {
+        "second": "",               # a second ink, as the colour it prints (e.g. "#00A95C" for
+                                    # riso green). The running line, the title image and the
+                                    # picture pages print in it; everything else in black.
+                                    # Empty = one ink. Builds a master PDF per drum.
+        "name": "second",           # the ink's name, for the file: <slug>-<name>.pdf
+        "french_fold": False,       # also impose for French fold: each leaf is two facing pages
+                                    # side by side (1|2, 3|4...), printed on one side only and
+                                    # folded at the outer edge, so nothing has to back up
+        "paper": ["12in", "18in"],  # the sheet the riso takes; leaves go on it as many as fit
+    },
     "cover": {
         "text": "cover.md",         # the back-cover card
         "bleed": "0.125in",
@@ -292,7 +303,7 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
     plate = s["title_image"]
     if plate and not (root / plate).is_file():
         die(f"[shelf] title_image: {plate} doesn't exist")
-    plate_html = f'<img class="title-image" src="{e(plate)}" alt="">' if plate else ""
+    plate_html = f'<img class="title-image ink2" src="{e(plate)}" alt="">' if plate else ""
     pages = [f'<section class="shelf-page right title-page">{plate_html}<h1>{e(cfg["title"])}</h1>'
              f'<p class="date">{e(date)}</p></section>']
     lines = "".join(f'<div class="line" style="top:{y:.2f}pt"></div>' for y in s["shelves"])
@@ -310,7 +321,7 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
             return ""
         last = spread == len(run[0]) - 1
         n = spread
-        return (f'<div class="running{" last" if last else ""}" style="left:{edge - k * page_w:.2f}pt;'
+        return (f'<div class="running ink2{" last" if last else ""}" style="left:{edge - k * page_w:.2f}pt;'
                 f'width:{2 * page_w - 2 * edge:.2f}pt;'
                 f'top:{to_pt(s["running_top"]):.2f}pt;'
                 f"font-family:'{alias(run[1])}';font-weight:{s['running_weight']};font-size:{run[2]:.2f}pt\">"
@@ -345,7 +356,7 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
             # A picture: a page to itself, centred.
             if not (root / item).is_file():
                 die(f"[shelf] back lists {item}, but it doesn't exist")
-            back.append(f'<section class="back picture"><img src="{e(item)}" alt=""></section>')
+            back.append(f'<section class="back picture"><img class="ink2" src="{e(item)}" alt=""></section>')
         else:
             back.append(md_page(root / item, cfg, fill))
     pad = "".join('<section class="back pad"></section>' for _ in range(blanks))
@@ -407,6 +418,106 @@ def cover_html(cfg, root, books, shelf, date, pages, faces):
 
 # ----------------------------------------------------------------- build
 
+def tinted(root, out, src, colour):
+    """A copy of an image in the second ink's colour, for the preview: a
+    one-colour PNG becomes that colour on transparent, an SVG has its dark
+    colours swapped. Returns its path relative to the book folder."""
+    path, dest = root / src, out / "ink" / Path(src).name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix.lower() == ".svg":
+        text = path.read_text()
+        text = re.sub(r"#(?:[0-3][0-9a-f]){3}\b|#000\b|\bblack\b", colour, text, flags=re.I)
+        dest.write_text(text)
+    else:
+        from PIL import Image
+        im = Image.open(path).convert("L")
+        r, g, b = (int(colour.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+        alpha = im.point(lambda v: 255 - v)
+        tint = Image.new("RGBA", im.size, (r, g, b, 0))
+        tint.putalpha(alpha)
+        tint.save(dest)
+    return str(dest.relative_to(root))
+
+
+def separations(root, cfg, page, out):
+    """Riso: the book as it'll look (the second ink in its colour), and one
+    master PDF per drum, each in plain black, the other drum's marks left
+    out. Same pages, same positions, so the masters register."""
+    colour, slug, name = cfg["riso"]["second"], cfg["slug"], cfg["riso"]["name"]
+    # Black drum: everything but the second ink.
+    black = page.replace("</style>", ".ink2 { visibility: hidden; }\n</style>", 1)
+    # Second drum: only the second ink, printed black for the master; page
+    # numbers off (they print with the black).
+    second = page.replace("</style>", ":root { --ink: transparent; }\n"
+                          "body * { visibility: hidden; } .ink2, .ink2 * { visibility: visible; }\n</style>", 1)
+    # The look: the second ink in its colour, images swapped for tinted copies.
+    look = page.replace("</style>", f".running {{ color: {colour}; }}\n</style>", 1)
+    for src in set(re.findall(r'<img class="[^"]*ink2[^"]*" src="([^"]+)"', page)):
+        look = look.replace(f'class="title-image ink2" src="{src}"', f'class="title-image ink2" src="{tinted(root, out, src, colour)}"')
+        look = look.replace(f'<img class="ink2" src="{src}"', f'<img class="ink2" src="{tinted(root, out, src, colour)}"')
+    files = {}
+    for key, html_ in (("black", black), (name, second)):
+        f = out / f"{slug}-{key}.pdf"
+        render(html_, root).write_pdf(f)
+        files[key] = f
+    return look, files
+
+
+def french_fold(cfg, pdfs, out):
+    """Impose each PDF for French fold on the riso's paper: leaf after leaf,
+    each one pages (2k+1 | 2k+2) side by side, as many leaves to a sheet as
+    fit, with crop marks at the cuts and short dashes at each fold. Nothing
+    bleeds off a cut that shows: the open edges go into the binding, and
+    the fold is the fore-edge. Returns the files written and leaves/sheet."""
+    from pypdf import PdfReader, PdfWriter, Transformation
+    pw, ph = to_pt(cfg["page"]["width"]), to_pt(cfg["page"]["height"])
+    W, H = (to_pt(v) for v in cfg["riso"]["paper"])
+    leaf_w, leaf_h = 2 * pw, ph
+    if leaf_w > W - 36 or leaf_h > H - 36:
+        W, H = H, W                                   # try the paper the other way round
+    per = int((H - 36) // leaf_h)
+    if leaf_w > W - 36 or per < 1:
+        die(f"[riso] paper {cfg['riso']['paper']} can't hold a {leaf_w/72:g} × {leaf_h/72:g}in leaf with room for marks")
+    x0 = (W - leaf_w) / 2
+    y_top = (H + per * leaf_h) / 2                    # the leaves sit centred on the sheet
+    mark, gap = 18, 6                                 # crop mark length and its gap from the cut
+    lines = []
+    xs = [x0, x0 + leaf_w]
+    ys = [y_top - i * leaf_h for i in range(per + 1)]
+    for x in xs:                                      # vertical cuts: marks above and below
+        lines += [(x, H - (H - ys[0]) + gap, x, ys[0] + gap + mark), (x, ys[-1] - gap, x, ys[-1] - gap - mark)]
+    for y in ys:                                      # horizontal cuts: marks left and right
+        lines += [(x0 - gap, y, x0 - gap - mark, y), (x0 + leaf_w + gap, y, x0 + leaf_w + gap + mark, y)]
+    fold = x0 + pw                                    # the fold: dashes in the margins
+    dashes = [(fold, ys[0] + gap, fold, ys[0] + gap + mark), (fold, ys[-1] - gap, fold, ys[-1] - gap - mark)]
+    svg_lines = "".join(f'<line x1="{a:.2f}" y1="{H - b:.2f}" x2="{c:.2f}" y2="{H - d:.2f}"/>' for a, b, c, d in lines)
+    svg_dash = "".join(f'<line x1="{a:.2f}" y1="{H - b:.2f}" x2="{c:.2f}" y2="{H - d:.2f}" stroke-dasharray="3 3"/>' for a, b, c, d in dashes)
+    marks_html = (f'<style>@page {{ size: {W:.2f}pt {H:.2f}pt; margin: 0; }} body {{ margin: 0; }}</style>'
+                  f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.2f}pt" height="{H:.2f}pt" viewBox="0 0 {W:.2f} {H:.2f}" '
+                  f'stroke="#000" stroke-width="0.5">{svg_lines}{svg_dash}</svg>')
+    import io
+    from weasyprint import HTML
+    marks_pdf = PdfReader(io.BytesIO(HTML(string=marks_html).write_pdf()))
+    written = []
+    for key, src in pdfs.items():
+        pages = PdfReader(src).pages
+        leaves = [(pages[i], pages[i + 1] if i + 1 < len(pages) else None) for i in range(0, len(pages), 2)]
+        w = PdfWriter()
+        for at in range(0, len(leaves), per):
+            sheet = w.add_blank_page(W, H)
+            sheet.merge_page(marks_pdf.pages[0])
+            for slot, (left, right) in enumerate(leaves[at:at + per]):
+                y = ys[slot + 1]
+                sheet.merge_transformed_page(left, Transformation().translate(x0, y))
+                if right is not None:
+                    sheet.merge_transformed_page(right, Transformation().translate(x0 + pw, y))
+        f = out / f"{cfg['slug']}-french-fold{'' if key == 'look' else '-' + key}.pdf"
+        with open(f, "wb") as fh:
+            w.write(fh)
+        written.append((key, f, -(-len(leaves) // per)))
+    return written, per
+
+
 def build(root, cfg, snap=None, quiet=False):
     cfg = checked(cfg, root)
     data, books = catalogue(root, cfg)
@@ -437,8 +548,15 @@ def build(root, cfg, snap=None, quiet=False):
         shelf, n_rows, run_size, page, doc = make(blanks)
     (out / "book.html").write_text(page)
     pdf = out / f"{cfg['slug']}.pdf"
+    masters = {}
+    if cfg["riso"]["second"]:
+        look, masters = separations(root, cfg, page, out)
+        doc = render(look, root)
     doc.write_pdf(pdf)
     total = len(doc.pages)
+    folded, per_sheet = [], 0
+    if cfg["riso"]["french_fold"]:
+        folded, per_sheet = french_fold(cfg, {"look": pdf, **masters}, out)
 
     sheet, info = cover_html(cfg, root, books, shelf, date, total, faces)
     (out / "cover.html").write_text(sheet)
@@ -454,6 +572,11 @@ def build(root, cfg, snap=None, quiet=False):
         print(f"-> {pdf}\n   {total} pages: {len(books)} books on {n_rows} shelves, "
               f"{len(shelf.black)} black spines" + (", 1 blank page before the last" if blanks else "")
               + (f", the running line at {run_size:.1f}pt" if run_size else ""))
+        for key, f in masters.items():
+            print(f"-> {f}\n   the {key} drum, as a black master")
+        for key, f, n in folded:
+            what = "the look" if key == "look" else f"the {key} drum"
+            print(f"-> {f}\n   French fold, {what}: {n} sheets, {per_sheet} leaves to a sheet, one side only")
         print(f"-> {cover_pdf}\n   {info['W']:.3f} × {info['H']:.3f}in with bleed, spine {info['spine']:.3f}in, "
               f"every book at {info['scale']:.3f} on {info['shelves']} shelves")
         print(f"-> {out / 'preview.html'}")

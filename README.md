@@ -165,6 +165,17 @@ The spine width comes from the page count and `[cover] caliper`. The build
 warns when the spine is too thin for type or the book too short to perfect
 bind.
 
+For a risograph, `[riso] second` names a second ink (as the colour it
+prints). The running line, the title image and picture pages go on that
+drum and everything else on black. The build writes `<slug>.pdf` as it will
+look, in both colours, and a master per drum (`<slug>-black.pdf`,
+`<slug>-<name>.pdf`), each in plain black, from the same layout so they
+register. `french_fold = true` also imposes all three for French fold on
+`[riso] paper`: each leaf is two facing pages side by side (1|2, 3|4…),
+printed on one side and folded at the outer edge, as many leaves to a sheet
+as fit, with crop marks and fold dashes. One-sided printing means nothing
+ever has to back up.
+
 `fetch`, `specimen` and `site` are for poems only so far.
 
 ## Publishing the site
