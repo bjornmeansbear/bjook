@@ -67,6 +67,9 @@ DEFAULTS = {
         "french_fold": False,       # also impose for French fold: each leaf is two facing pages
                                     # side by side (1|2, 3|4...), printed on one side only and
                                     # folded at the outer edge, so nothing has to back up
+        "duplex": False,            # also impose single pages front and back, as many to a side
+                                    # as fit, backs laid out to flip on the long edge; cut apart
+                                    # and perfect bind
         "paper": ["12in", "18in"],  # the sheet the riso takes; leaves go on it as many as fit
     },
     "cover": {
@@ -518,6 +521,57 @@ def french_fold(cfg, pdfs, out):
     return written, per
 
 
+def duplex(cfg, pdfs, out):
+    """Impose each PDF as single leaves printed on both sides: odd pages on
+    the front of a sheet, in a grid of as many as fit, and each leaf's even
+    page on the back in the mirrored spot, so turning the sheet over on its
+    long edge puts every back behind its front. Crop marks at every cut.
+    Returns the files written and pages per side."""
+    from pypdf import PdfReader, PdfWriter, Transformation
+    pw, ph = to_pt(cfg["page"]["width"]), to_pt(cfg["page"]["height"])
+    W, H = (to_pt(v) for v in cfg["riso"]["paper"])
+    cols, rows = int((W - 36) // pw), int((H - 36) // ph)
+    if cols * rows < 1:
+        die(f"[riso] paper {cfg['riso']['paper']} can't hold a page with room for marks")
+    x0, y0 = (W - cols * pw) / 2, (H - rows * ph) / 2
+    mark, gap = 18, 6
+    xs = [x0 + c * pw for c in range(cols + 1)]
+    ys = [y0 + r * ph for r in range(rows + 1)]
+    seg = []
+    for x in xs:
+        seg += [(x, y0 - gap, x, y0 - gap - mark), (x, ys[-1] + gap, x, ys[-1] + gap + mark)]
+    for y in ys:
+        seg += [(x0 - gap, y, x0 - gap - mark, y), (xs[-1] + gap, y, xs[-1] + gap + mark, y)]
+    svg = "".join(f'<line x1="{a:.2f}" y1="{H - b:.2f}" x2="{c:.2f}" y2="{H - d:.2f}"/>' for a, b, c, d in seg)
+    marks_html = (f'<style>@page {{ size: {W:.2f}pt {H:.2f}pt; margin: 0; }} body {{ margin: 0; }}</style>'
+                  f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.2f}pt" height="{H:.2f}pt" '
+                  f'viewBox="0 0 {W:.2f} {H:.2f}" stroke="#000" stroke-width="0.5">{svg}</svg>')
+    import io
+    from weasyprint import HTML
+    marks = PdfReader(io.BytesIO(HTML(string=marks_html).write_pdf())).pages[0]
+    slots = cols * rows
+    written = []
+    for key, src in pdfs.items():
+        pages = PdfReader(src).pages
+        leaves = [(pages[i], pages[i + 1] if i + 1 < len(pages) else None) for i in range(0, len(pages), 2)]
+        w = PdfWriter()
+        for at in range(0, len(leaves), slots):
+            front, back = w.add_blank_page(W, H), w.add_blank_page(W, H)
+            front.merge_page(marks)
+            back.merge_page(marks)
+            for n, (odd, even) in enumerate(leaves[at:at + slots]):
+                c, r = n % cols, n // cols
+                y = ys[rows - 1 - r]                    # first leaf top left
+                front.merge_transformed_page(odd, Transformation().translate(xs[c], y))
+                if even is not None:                    # mirrored left to right on the back
+                    back.merge_transformed_page(even, Transformation().translate(xs[cols - 1 - c], y))
+        f = out / f"{cfg['slug']}-duplex{'' if key == 'look' else '-' + key}.pdf"
+        with open(f, "wb") as fh:
+            w.write(fh)
+        written.append((key, f, -(-len(leaves) // slots)))
+    return written, slots
+
+
 def build(root, cfg, snap=None, quiet=False):
     cfg = checked(cfg, root)
     data, books = catalogue(root, cfg)
@@ -557,6 +611,9 @@ def build(root, cfg, snap=None, quiet=False):
     folded, per_sheet = [], 0
     if cfg["riso"]["french_fold"]:
         folded, per_sheet = french_fold(cfg, {"look": pdf, **masters}, out)
+    duplexed, per_side = [], 0
+    if cfg["riso"]["duplex"]:
+        duplexed, per_side = duplex(cfg, {"look": pdf, **masters}, out)
 
     sheet, info = cover_html(cfg, root, books, shelf, date, total, faces)
     (out / "cover.html").write_text(sheet)
@@ -577,6 +634,9 @@ def build(root, cfg, snap=None, quiet=False):
         for key, f, n in folded:
             what = "the look" if key == "look" else f"the {key} drum"
             print(f"-> {f}\n   French fold, {what}: {n} sheets, {per_sheet} leaves to a sheet, one side only")
+        for key, f, n in duplexed:
+            what = "the look" if key == "look" else f"the {key} drum"
+            print(f"-> {f}\n   double-sided, {what}: {n} sheets, {per_side} pages a side, flip on the long edge")
         print(f"-> {cover_pdf}\n   {info['W']:.3f} × {info['H']:.3f}in with bleed, spine {info['spine']:.3f}in, "
               f"every book at {info['scale']:.3f} on {info['shelves']} shelves")
         print(f"-> {out / 'preview.html'}")
