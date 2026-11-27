@@ -23,6 +23,7 @@ import html
 import io
 import json
 import re
+import unicodedata
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -51,6 +52,12 @@ DEFAULTS = {
         "second_spines": [],        # books (by slug) with a solid block of the [riso] second
                                     # ink under the spine; the outline and title still print in
                                     # black, over it, so the drums needn't register exactly
+        "second_marks": True,       # and point back to them: where the pages after the shelf
+                                    # name one in italics, a second-ink underline; and a mark
+                                    # on its line in the index:
+        "index_mark": "spine",      # "spine" a small spine beside the entry, "disc" a dot
+                                    # under the page number, "ring" a ring round it, "star"
+                                    # an asterisk after the title, "underline" the title
         "back": ["essay.md", "index", "colophon.md"],   # after the shelf, in order;
                                     # "index" is the index, an image gets a page to itself,
                                     # and the last one ends the book
@@ -261,6 +268,35 @@ def fills(cfg, books, shelf, date):
             "title": cfg["title"], "author": cfg["author"]}
 
 
+def _plain(t):
+    t = unicodedata.normalize("NFKD", html.unescape(t))
+    t = "".join(c for c in t if not unicodedata.combining(c)).lower().replace("&", " and ")
+    t = re.sub(r"[‘’']", "", t)
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", t).split())
+
+
+def underline_named(page, books, named):
+    """Each italic title in a page that names one of these books gets the
+    class "u": a second-ink underline. A book answers to its title, the title
+    before a colon, its subtitle, or any part between slashes ("Ambient 1/Music
+    For Airports"), and to the first words of any of those ("Eternally Yours"
+    for "Eternally Yours Time in Design"). Adds each one found to `named`."""
+    names = {}
+    for b in books:
+        for n in [b["title"], b["title"].split(":")[0], b.get("subtitle") or "", *b["title"].split("/")]:
+            if _plain(n):
+                names.setdefault(_plain(n), b["slug"])
+
+    def mark(m):
+        said = _plain(m.group(1))
+        for name, slug in names.items():
+            if said == name or (len(said.split()) >= 2 and name.startswith(said + " ")):
+                named.add(slug)
+                return f'<em class="u">{m.group(1)}</em>'
+        return m.group(0)
+    return re.sub(r"<em>([^<]+)</em>", mark, page)
+
+
 def md_page(path, cfg, fill):
     if not path.is_file():
         die(f"[shelf] back lists {path.name}, but it doesn't exist")
@@ -379,23 +415,38 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
 
     fill = fills(cfg, books, shelf, date)
     back = []
+    named = set()       # second-spine books the pages after the shelf name in italics
     for item in s["back"]:
         if item == "index":
             # Page number first, right-aligned in its own column, then the
             # title, so the eye goes straight from number to book.
-            rows_ = "".join(f'<li><b>{shelf.page_of[b["slug"]]}</b><span>{e(b["title"])}'
-                            f'{(", " + e(b["authors"][0])) if b.get("authors") else ""}</span></li>'
-                            for b in books)
-            back.append(f'<section class="back index"><h1>{e(s["index_title"])}</h1><ol>{rows_}</ol></section>')
+            def row(b):
+                mark = s["second_marks"] and b["slug"] in shelf.second
+                by = (", " + e(b["authors"][0])) if b.get("authors") else ""
+                n = f'<span class="n">{shelf.page_of[b["slug"]]}</span>'
+                if not mark:
+                    return f'<li><b>{n}</b><span>{e(b["title"])}{by}</span></li>'
+                # every kind of mark is in the page; the stylesheet shows the
+                # one [shelf] index_mark names (see shelf.css)
+                return (f'<li class="second">'
+                        f'<b><i class="spine-mark ink2"></i><i class="dot ink2"></i>{n}</b>'
+                        f'<span><span class="t u">{e(b["title"])}</span><i class="star ink2">*</i>{by}</span></li>')
+            rows_ = "".join(row(b) for b in books)
+            back.append(f'<section class="back index mark-{e(s["index_mark"])}"><h1>{e(s["index_title"])}</h1>'
+                        f'<ol>{rows_}</ol></section>')
         elif Path(item).suffix.lower() in (".png", ".jpg", ".jpeg", ".svg", ".gif"):
             # A picture: a page to itself, centred.
             if not (root / item).is_file():
                 die(f"[shelf] back lists {item}, but it doesn't exist")
             back.append(f'<section class="back picture"><img class="ink2" src="{e(item)}" alt=""></section>')
         else:
-            back.append(md_page(root / item, cfg, fill))
+            page = md_page(root / item, cfg, fill)
+            if s["second_marks"] and shelf.second:
+                page = underline_named(page, [b for b in books if b["slug"] in shelf.second], named)
+            back.append(page)
     pad = "".join('<section class="back pad"></section>' for _ in range(blanks))
     body = "".join(pages) + "".join(back[:-1]) + pad + back[-1]
+    shelf.named = named
     return body, len(rows), run
 
 
@@ -482,14 +533,18 @@ def separations(root, cfg, page, out):
     out. Same pages, same positions, so the masters register."""
     colour, slug, name = cfg["riso"]["second"], cfg["slug"], cfg["riso"]["name"]
     # Black drum: everything but the second ink.
-    black = page.replace("</style>", ".ink2 { visibility: hidden; }\n</style>", 1)
+    black = page.replace("</style>", ".ink2 { visibility: hidden; } .u, .mark-underline .t.u { text-decoration-color: transparent; }\n</style>", 1)
     # Second drum: only the second ink, printed black for the master; page
     # numbers off (they print with the black).
     second = page.replace("</style>", ":root { --ink: transparent; }\n"
-                          "body * { visibility: hidden; } .ink2, .ink2 * { visibility: visible; }\n</style>", 1)
+                          "body * { visibility: hidden; } .ink2, .ink2 * { visibility: visible; }\n"
+                          # an underline prints here; the words under it print with the black
+                          ".u, .mark-underline .t.u { visibility: visible; color: transparent; text-decoration-color: #000; }\n</style>", 1)
     # The look: the second ink in its colour, images swapped for tinted copies.
     look = page.replace("</style>", f".running {{ color: {colour}; }}\n"
-                        f".spine .fill {{ background: {colour}; }}\n</style>", 1)
+                        f".spine .fill, .mark-spine .spine-mark, .mark-disc .dot {{ background: {colour}; }}\n"
+                        f".mark-ring .dot {{ border-color: {colour}; }} .mark-star .star {{ color: {colour}; }}\n"
+                        f".u, .mark-underline .t.u {{ text-decoration-color: {colour}; }}\n</style>", 1)
     look = re.sub(r'(<img class="[^"]*\bink2\b[^"]*" src=")([^"]+)"',
                   lambda m: f'{m[1]}{tinted(root, out, m[2], colour)}"', look)
     files = {}
@@ -702,7 +757,8 @@ def build(root, cfg, snap=None, quiet=False):
     if not quiet:
         print(f"-> {pdf}\n   {total} pages: {len(books)} books on {n_rows} shelves, "
               f"{len(shelf.black)} black spines" +
-              (f", {len(shelf.second)} in the second ink" if shelf.second else "") + (", 1 blank page before the last" if blanks else "")
+              (f", {len(shelf.second)} in the second ink" if shelf.second else "") +
+              (f" ({len(shelf.named)} underlined where the text names them)" if shelf.second and s["second_marks"] else "") + (", 1 blank page before the last" if blanks else "")
               + (f", the running line at {run[2]:.1f}pt" if run else ""))
         print(f"-> {spreads_file}\n   the same, as spreads, for reading on screen and sharing")
         for key, f in masters.items():

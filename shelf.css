@@ -67,6 +67,33 @@ em { font-style: italic; }
 .index li b { flex: 0 0 1.2em; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 .index li span { flex: 1 1 auto; }
 
+/* A book with a second-ink spine, marked on its index line. Every mark is in
+   the page; [shelf] index_mark picks the one that shows. Each sits in the line
+   beside the page number (no absolute positioning: in columns WeasyPrint
+   places it wrong), and the number column widens for every row so they stay
+   aligned. Black here, for its own drum's master; the look colours it. */
+.index li b { display: flex; justify-content: flex-end; align-items: center; align-self: flex-start; }
+.index .spine-mark, .index .dot, .index .star { display: none; }
+.mark-spine li b { flex-basis: calc(1.2em + 4pt); }
+.mark-spine .spine-mark { display: inline-block; width: 1.8pt; height: 1.05em; margin-right: 2.2pt; background: #000; }
+.mark-disc li b, .mark-ring li b { flex-basis: 1.7em; }
+.mark-disc .n, .mark-ring .n { min-width: 1.4em; text-align: center; }
+/* the negative margins keep the circle from opening up the line spacing */
+.mark-disc .dot, .mark-ring .dot {
+  display: inline-block; width: 1.4em; height: 1.4em; margin: -0.1em -1.4em -0.1em 0;
+  border-radius: 50%; box-sizing: border-box;
+}
+.mark-disc .dot { background: #000; }
+.mark-ring .dot { border: 0.6pt solid #000; }
+.mark-star .star { display: inline; font-style: normal; margin-left: 0.1em; }
+/* -line only: the shorthand would reset the colour the separations set */
+.index .t.u { text-decoration-line: none; }
+.mark-underline .t.u { text-decoration-line: underline; }
+
+/* A second-spine book named in the text: underlined in the second ink, the
+   words in black. The separations give the line and the words a drum each. */
+.u { text-decoration-line: underline; text-decoration-thickness: 0.9pt; text-underline-offset: 1.6pt; }
+
 .colophon { font-size: 7.5pt; line-height: 1.4; }
 .colophon p { margin: 0 0 6pt; }
 .faces { list-style: none; margin: 0 0 8pt; padding: 0; }
