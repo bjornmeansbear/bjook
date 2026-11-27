@@ -12,15 +12,18 @@ drawn on both pages and each page clips it, so the halves meet when the book
 lies open.
 
 Each spine is set in its book's own typeface, so the book is also a type
-specimen. Books with certain tags (the commons, in A Library) print as black
-spines. After the shelf: any Markdown pages (an essay), an index with the
+specimen. Books with chosen tags can print as black spines. After the shelf: any Markdown pages (an essay), an index with the
 page each book stands on, and a colophon, which lands on the last page.
 The cover is a separate sheet (back, spine, front) showing every book at
 once. See RULES.md "Bjook".
 """
+import datetime
 import html
+import io
+import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 from book import (alias, all_faces, book_families, die, document, page_css, rasterize,
                   render, snapshot, stamp_now, to_pt, write_preview)
@@ -67,9 +70,6 @@ DEFAULTS = {
         "french_fold": False,       # also impose for French fold: each leaf is two facing pages
                                     # side by side (1|2, 3|4...), printed on one side only and
                                     # folded at the outer edge, so nothing has to back up
-        "duplex": False,            # also impose single pages front and back, as many to a side
-                                    # as fit, backs laid out to flip on the long edge; cut apart
-                                    # and perfect bind
         "paper": ["12in", "18in"],  # the sheet the riso takes; leaves go on it as many as fit
         "marks": True,              # crop marks and fold dashes, wherever there's room for them
         "per_sheet": 0,             # leaves to a sheet; 0 = as many as fit
@@ -122,7 +122,6 @@ def catalogue(root, cfg):
     path = (root / cfg["shelf"]["data"]).resolve()
     if not path.is_file():
         die(f"[shelf] data: {path} doesn't exist")
-    import json
     data = json.loads(path.read_text())
     books = data["books"] if isinstance(data, dict) else data
     for b in books:
@@ -217,14 +216,11 @@ def fit(title, room, per_letter):
 # ----------------------------------------------------------------- pages
 
 def fills(cfg, books, shelf, date):
-    """What {braces} in the Markdown pages turn into."""
+    """What {braces} in the Markdown pages turn into. Numbers and names only:
+    the sentences around them belong to the book's own text."""
     n = {}
     for b in books:
         n[b.get("sized", "")] = n.get(b.get("sized", ""), 0) + 1
-    sizes = f"I’ve measured {n['measured']} with a ruler. " if n.get("measured") else ""
-    sizes += f"Library catalogues gave me the size of {n.get('library-of-congress', 0) + n.get('open-library', 0)}. "
-    sizes += f"For {n.get('pages', 0)} I only had a page count, so a short rule worked out the thickness from that. "
-    sizes += f"The other {n.get('guessed', 0)} are guesses, and a rule made those too."
     scale = cfg["shelf"]["scale"]
     words = {0.4: "two fifths", 0.25: "a quarter", 0.5: "half", 0.2: "a fifth", 1: "full"}
     count = {}
@@ -238,9 +234,12 @@ def fills(cfg, books, shelf, date):
         f"{count.get(k, 0)} spines. {e(f.get('url', ''))}</li>"
         for k, f in cfg["faces"].items())
     return {"books": len(books), "date": date, "scale": words.get(scale, f"{scale:g}×"),
-            "sizes": sizes, "black": len(shelf.black), "commons": len(shelf.black),
-            "faces": f'<ul class="faces">{faces}</ul>', "title": cfg["title"],
-            "author": cfg["author"]}
+            # where each book's size came from (the catalogue's "sized" field)
+            "measured": n.get("measured", 0),
+            "catalogued": n.get("library-of-congress", 0) + n.get("open-library", 0),
+            "from_pages": n.get("pages", 0), "guessed": n.get("guessed", 0),
+            "black": len(shelf.black), "faces": f'<ul class="faces">{faces}</ul>',
+            "title": cfg["title"], "author": cfg["author"]}
 
 
 def md_page(path, cfg, fill):
@@ -330,8 +329,6 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
     rows = shelf.rows(2 * page_w - 2 * edge)
     spreads = -(-len(rows) // per)
     run = running_line(cfg, root, spreads, page_w, faces) if s["running"] else None
-    cfg["_run"] = run
-    run_size = run[2] if run else 0
 
     def running(spread, k):
         # This spread's piece of the line: whole words, spaced to fill the
@@ -340,12 +337,11 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
         if not run or spread >= len(run[0]):
             return ""
         last = spread == len(run[0]) - 1
-        n = spread
         return (f'<div class="running ink2{" last" if last else ""}" style="left:{edge - k * page_w:.2f}pt;'
                 f'width:{2 * page_w - 2 * edge:.2f}pt;'
                 f'top:{to_pt(s["running_top"]):.2f}pt;'
                 f"font-family:'{alias(run[1])}';font-weight:{s['running_weight']};font-size:{run[2]:.2f}pt\">"
-                f'{e(run[0][n])}</div>')
+                f'{e(run[0][spread])}</div>')
     for i in range(0, len(rows), per):
         left_no = len(pages) + 1
         layout = {"left": [], "right": []}
@@ -381,7 +377,7 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
             back.append(md_page(root / item, cfg, fill))
     pad = "".join('<section class="back pad"></section>' for _ in range(blanks))
     body = "".join(pages) + "".join(back[:-1]) + pad + back[-1]
-    return body, len(rows), run_size
+    return body, len(rows), run
 
 
 def cover_html(cfg, root, books, shelf, date, pages, faces):
@@ -473,15 +469,29 @@ def separations(root, cfg, page, out):
                           "body * { visibility: hidden; } .ink2, .ink2 * { visibility: visible; }\n</style>", 1)
     # The look: the second ink in its colour, images swapped for tinted copies.
     look = page.replace("</style>", f".running {{ color: {colour}; }}\n</style>", 1)
-    for src in set(re.findall(r'<img class="[^"]*ink2[^"]*" src="([^"]+)"', page)):
-        look = look.replace(f'class="title-image ink2" src="{src}"', f'class="title-image ink2" src="{tinted(root, out, src, colour)}"')
-        look = look.replace(f'<img class="ink2" src="{src}"', f'<img class="ink2" src="{tinted(root, out, src, colour)}"')
+    look = re.sub(r'(<img class="[^"]*\bink2\b[^"]*" src=")([^"]+)"',
+                  lambda m: f'{m[1]}{tinted(root, out, m[2], colour)}"', look)
     files = {}
     for key, html_ in (("black", black), (name, second)):
         f = out / f"{slug}-{key}.pdf"
         render(html_, root).write_pdf(f)
         files[key] = f
     return look, files
+
+
+def marks_page(W, H, cuts, folds=()):
+    """A blank W x H sheet carrying only marks, as a pypdf page to lay pages
+    over: crop marks (solid) and fold marks (dashed), each an (x1, y1, x2, y2)
+    line in PDF points, measured from the bottom left."""
+    from pypdf import PdfReader
+    from weasyprint import HTML
+    line = lambda a, b, c, d, dash="": (f'<line x1="{a:.2f}" y1="{H - b:.2f}" x2="{c:.2f}" y2="{H - d:.2f}"'
+                                        f'{dash}/>')
+    svg = "".join(line(*l) for l in cuts) + "".join(line(*l, ' stroke-dasharray="3 3"') for l in folds)
+    sheet = (f'<style>@page {{ size: {W:.2f}pt {H:.2f}pt; margin: 0; }} body {{ margin: 0; }}</style>'
+             f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.2f}pt" height="{H:.2f}pt" '
+             f'viewBox="0 0 {W:.2f} {H:.2f}" stroke="#000" stroke-width="0.5">{svg}</svg>')
+    return PdfReader(io.BytesIO(HTML(string=sheet).write_pdf())).pages[0]
 
 
 def french_fold(cfg, pdfs, out):
@@ -523,15 +533,7 @@ def french_fold(cfg, pdfs, out):
         if ends:                                      # the fold: dashes above and below
             fold = x0 + pw
             dashes = [(fold, ys[0] + gap, fold, ys[0] + need), (fold, ys[-1] - gap, fold, ys[-1] - need)]
-    room = bool(lines or dashes)
-    svg_lines = "".join(f'<line x1="{a:.2f}" y1="{H - b:.2f}" x2="{c:.2f}" y2="{H - d:.2f}"/>' for a, b, c, d in lines)
-    svg_dash = "".join(f'<line x1="{a:.2f}" y1="{H - b:.2f}" x2="{c:.2f}" y2="{H - d:.2f}" stroke-dasharray="3 3"/>' for a, b, c, d in dashes)
-    marks_html = (f'<style>@page {{ size: {W:.2f}pt {H:.2f}pt; margin: 0; }} body {{ margin: 0; }}</style>'
-                  f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.2f}pt" height="{H:.2f}pt" viewBox="0 0 {W:.2f} {H:.2f}" '
-                  f'stroke="#000" stroke-width="0.5">{svg_lines}{svg_dash}</svg>')
-    import io
-    from weasyprint import HTML
-    marks_pdf = PdfReader(io.BytesIO(HTML(string=marks_html).write_pdf()))
+    marks = marks_page(W, H, lines, dashes) if (lines or dashes) else None
     written = []
     for key, src in pdfs.items():
         pages = PdfReader(src).pages
@@ -539,8 +541,8 @@ def french_fold(cfg, pdfs, out):
         w = PdfWriter()
         for at in range(0, len(leaves), per):
             sheet = w.add_blank_page(W, H)
-            if room:
-                sheet.merge_page(marks_pdf.pages[0])
+            if marks:
+                sheet.merge_page(marks)
             for slot, (left, right) in enumerate(leaves[at:at + per]):
                 y = ys[slot + 1]
                 sheet.merge_transformed_page(left, Transformation().translate(x0, y))
@@ -551,57 +553,6 @@ def french_fold(cfg, pdfs, out):
             w.write(fh)
         written.append((key, f, -(-len(leaves) // per)))
     return written, per
-
-
-def duplex(cfg, pdfs, out):
-    """Impose each PDF as single leaves printed on both sides: odd pages on
-    the front of a sheet, in a grid of as many as fit, and each leaf's even
-    page on the back in the mirrored spot, so turning the sheet over on its
-    long edge puts every back behind its front. Crop marks at every cut.
-    Returns the files written and pages per side."""
-    from pypdf import PdfReader, PdfWriter, Transformation
-    pw, ph = to_pt(cfg["page"]["width"]), to_pt(cfg["page"]["height"])
-    W, H = (to_pt(v) for v in cfg["riso"]["paper"])
-    cols, rows = int((W - 36) // pw), int((H - 36) // ph)
-    if cols * rows < 1:
-        die(f"[riso] paper {cfg['riso']['paper']} can't hold a page with room for marks")
-    x0, y0 = (W - cols * pw) / 2, (H - rows * ph) / 2
-    mark, gap = 18, 6
-    xs = [x0 + c * pw for c in range(cols + 1)]
-    ys = [y0 + r * ph for r in range(rows + 1)]
-    seg = []
-    for x in xs:
-        seg += [(x, y0 - gap, x, y0 - gap - mark), (x, ys[-1] + gap, x, ys[-1] + gap + mark)]
-    for y in ys:
-        seg += [(x0 - gap, y, x0 - gap - mark, y), (xs[-1] + gap, y, xs[-1] + gap + mark, y)]
-    svg = "".join(f'<line x1="{a:.2f}" y1="{H - b:.2f}" x2="{c:.2f}" y2="{H - d:.2f}"/>' for a, b, c, d in seg)
-    marks_html = (f'<style>@page {{ size: {W:.2f}pt {H:.2f}pt; margin: 0; }} body {{ margin: 0; }}</style>'
-                  f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.2f}pt" height="{H:.2f}pt" '
-                  f'viewBox="0 0 {W:.2f} {H:.2f}" stroke="#000" stroke-width="0.5">{svg}</svg>')
-    import io
-    from weasyprint import HTML
-    marks = PdfReader(io.BytesIO(HTML(string=marks_html).write_pdf())).pages[0]
-    slots = cols * rows
-    written = []
-    for key, src in pdfs.items():
-        pages = PdfReader(src).pages
-        leaves = [(pages[i], pages[i + 1] if i + 1 < len(pages) else None) for i in range(0, len(pages), 2)]
-        w = PdfWriter()
-        for at in range(0, len(leaves), slots):
-            front, back = w.add_blank_page(W, H), w.add_blank_page(W, H)
-            front.merge_page(marks)
-            back.merge_page(marks)
-            for n, (odd, even) in enumerate(leaves[at:at + slots]):
-                c, r = n % cols, n // cols
-                y = ys[rows - 1 - r]                    # first leaf top left
-                front.merge_transformed_page(odd, Transformation().translate(xs[c], y))
-                if even is not None:                    # mirrored left to right on the back
-                    back.merge_transformed_page(even, Transformation().translate(xs[cols - 1 - c], y))
-        f = out / f"{cfg['slug']}-duplex{'' if key == 'look' else '-' + key}.pdf"
-        with open(f, "wb") as fh:
-            w.write(fh)
-        written.append((key, f, -(-len(leaves) // slots)))
-    return written, slots
 
 
 def spreads_pdf(cfg, src, dest):
@@ -631,8 +582,6 @@ def cover_riso(cfg, root, sheet, cover_pdf, out):
     black, the paper where it's white, so the cards show the paper through
     their inked type and rules."""
     from pypdf import PdfReader, PdfWriter, Transformation
-    import io
-    from weasyprint import HTML
     ink, paper = cfg["cover"]["ink"], cfg["cover"]["paper"]
     look_html = sheet.replace("</style>", f"""
 body, .cover {{ background: {paper}; }}
@@ -659,11 +608,7 @@ body, .cover {{ background: {paper}; }}
         seg += [(x, y0 - gap, x, max(0, y0 - gap - mark)), (x, y0 + ch + gap, x, min(H, y0 + ch + gap + mark))]
     for y in ty:
         seg += [(x0 - gap, y, max(0, x0 - gap - mark), y), (x0 + cw + gap, y, min(W, x0 + cw + gap + mark), y)]
-    svg = "".join(f'<line x1="{a:.2f}" y1="{H - c:.2f}" x2="{d:.2f}" y2="{H - e:.2f}"/>' for a, c, d, e in seg)
-    marks = PdfReader(io.BytesIO(HTML(string=(
-        f'<style>@page {{ size: {W:.2f}pt {H:.2f}pt; margin: 0; }} body {{ margin: 0; }}</style>'
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.2f}pt" height="{H:.2f}pt" viewBox="0 0 {W:.2f} {H:.2f}" '
-        f'stroke="#000" stroke-width="0.5">{svg}</svg>')).write_pdf())).pages[0]
+    marks = marks_page(W, H, seg)
     w = PdfWriter()
     page = w.add_blank_page(W, H)
     page.merge_page(marks)
@@ -676,60 +621,57 @@ body, .cover {{ background: {paper}; }}
 
 
 def build(root, cfg, snap=None, quiet=False):
+    """Every PDF the book's settings ask for, into build/. Returns what was
+    made, for `site`: the catalogue, the date, which page each book is on,
+    the running line, the page count and the cover's measurements."""
     cfg = checked(cfg, root)
     data, books = catalogue(root, cfg)
-    s = cfg["shelf"]
+    s, riso = cfg["shelf"], cfg["riso"]
     date = s["date"]
     if not date and data.get("generated"):
-        import datetime
         date = datetime.date.fromisoformat(data["generated"]).strftime("%-d %B %Y")
     out = root / "build"
     out.mkdir(exist_ok=True)
-    faces = all_faces(book_families(cfg) + [s["running_font"]] * bool(s["running_font"]), cfg["type"]["fonts_dir"]) + "\n" + face_css(cfg, root)
-    head = page_css(cfg, {"--ink": "#000", "--page-w": cfg["page"]["width"],
-                           "--page-h": cfg["page"]["height"]}, s["smart_quotes"]) + """
-@page shelf { margin: 0; %(off)s }
-@page pad { %(off)s }
-""" % {"off": " ".join(f"@{e}-{s} {{ content: none; }}" for e in ("top", "bottom")
-                       for s in ("left", "center", "right"))}
+    slug = cfg["slug"]
+    families = book_families(cfg) + ([s["running_font"]] if s["running_font"] else [])
+    faces = all_faces(families, cfg["type"]["fonts_dir"]) + "\n" + face_css(cfg, root)
+    no_boxes = " ".join(f"@{edge}-{at} {{ content: none; }}"
+                        for edge in ("top", "bottom") for at in ("left", "center", "right"))
+    head = (page_css(cfg, {"--ink": "#000", "--page-w": cfg["page"]["width"],
+                           "--page-h": cfg["page"]["height"]}, s["smart_quotes"])
+            + f"\n@page shelf {{ margin: 0; {no_boxes} }}\n@page pad {{ {no_boxes} }}\n")
 
+    # Laid out once; again with a blank page before the last if the count is odd.
     def make(blanks):
         shelf = Shelf(cfg, books, s["scale"], to_pt(s["min_spine"]))
-        body, n_rows, run_size = book_html(cfg, root, books, shelf, date, blanks, faces)
+        body, n_rows, run = book_html(cfg, root, books, shelf, date, blanks, faces)
         page = document(cfg, body, faces, root, "shelf.css", head)
-        return shelf, n_rows, run_size, page, render(page, root)
-
-    shelf, n_rows, run_size, page, doc = make(0)
+        return shelf, n_rows, run, page, render(page, root)
+    shelf, n_rows, run, page, doc = make(0)
     blanks = len(doc.pages) % 2
     if blanks:
-        shelf, n_rows, run_size, page, doc = make(blanks)
+        shelf, n_rows, run, page, doc = make(blanks)
     (out / "book.html").write_text(page)
-    pdf = out / f"{cfg['slug']}.pdf"
+
+    # The pages; with a second ink, a master per drum and the pages as they'll look.
+    pdf = out / f"{slug}.pdf"
     masters = {}
-    if cfg["riso"]["second"]:
+    if riso["second"]:
         look, masters = separations(root, cfg, page, out)
         doc = render(look, root)
     doc.write_pdf(pdf)
     total = len(doc.pages)
-    spreads_file = out / f"{cfg['slug']}-spreads.pdf"
+    spreads_file = out / f"{slug}-spreads.pdf"
     spreads_pdf(cfg, pdf, spreads_file)
-    folded, per_sheet = [], 0
-    if cfg["riso"]["french_fold"]:
-        folded, per_sheet = french_fold(cfg, {"look": pdf, **masters}, out)
-    duplexed, per_side = [], 0
-    if cfg["riso"]["duplex"]:
-        duplexed, per_side = duplex(cfg, {"look": pdf, **masters}, out)
+    folded, per_sheet = (french_fold(cfg, {"look": pdf, **masters}, out) if riso["french_fold"] else ([], 0))
 
-    cfg["_page_of"], cfg["_date"], cfg["_books"], cfg["_total"] = shelf.page_of, date, books, total
+    # The cover.
     sheet, info = cover_html(cfg, root, books, shelf, date, total, faces)
-    cfg["_cover"] = info
-    (out / "cover.html").write_text(sheet)
     sheet = sheet.replace("</style>", f".cover .spine {{ border-width: {cfg['cover']['hairline']}; }}\n</style>", 1)
-    cover_pdf = out / f"{cfg['slug']}-cover.pdf"
+    (out / "cover.html").write_text(sheet)
+    cover_pdf = out / f"{slug}-cover.pdf"
     render(sheet, root).write_pdf(cover_pdf)
-    cover_files = []
-    if cfg["cover"]["riso"]:
-        cover_files = cover_riso(cfg, root, sheet, cover_pdf, out)
+    cover_files = cover_riso(cfg, root, sheet, cover_pdf, out) if cfg["cover"]["riso"] else []
 
     stamp = stamp_now()
     t = cfg["type"]
@@ -739,17 +681,14 @@ def build(root, cfg, snap=None, quiet=False):
     if not quiet:
         print(f"-> {pdf}\n   {total} pages: {len(books)} books on {n_rows} shelves, "
               f"{len(shelf.black)} black spines" + (", 1 blank page before the last" if blanks else "")
-              + (f", the running line at {run_size:.1f}pt" if run_size else ""))
+              + (f", the running line at {run[2]:.1f}pt" if run else ""))
         print(f"-> {spreads_file}\n   the same, as spreads, for reading on screen and sharing")
         for key, f in masters.items():
             print(f"-> {f}\n   the {key} drum, as a black master")
         for key, f, n in folded:
             what = "the look" if key == "look" else f"the {key} drum"
-            print(f"-> {f}\n   French fold, {what}: {n} sheets, {per_sheet} leaf{'' if per_sheet == 1 else 'ves'} to a sheet, one side only"
-                  )
-        for key, f, n in duplexed:
-            what = "the look" if key == "look" else f"the {key} drum"
-            print(f"-> {f}\n   double-sided, {what}: {n} sheets, {per_side} pages a side, flip on the long edge")
+            leaves = "leaf" if per_sheet == 1 else "leaves"
+            print(f"-> {f}\n   French fold, {what}: {n} sheets, {per_sheet} {leaves} to a sheet, one side only")
         print(f"-> {cover_pdf}\n   {info['W']:.3f} × {info['H']:.3f}in with bleed, spine {info['spine']:.3f}in, "
               f"every book at {info['scale']:.3f} on {info['shelves']} shelves")
         for f, what in cover_files:
@@ -761,7 +700,8 @@ def build(root, cfg, snap=None, quiet=False):
             print(f"   ! {total} pages: most printers want 32 or more to perfect bind; saddle stitch instead")
     if snap is not None:
         snapshot(root, (pdf, cover_pdf), stamp, snap)
-    return cfg
+    return SimpleNamespace(cfg=cfg, books=books, date=date, total=total, page_of=shelf.page_of,
+                           run=run, cover=info, fill=fills(cfg, books, shelf, date))
 
 
 def sources(root):
@@ -783,11 +723,12 @@ def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
     that scrolls sideways (on screen too the shelf keeps going), the files
     to read and to print it, and links. The shelf at the front of the site
     gets the book's real cover."""
-    import contextlib, io, json, shutil, subprocess, datetime
+    import shutil, subprocess
+    from pypdf import PdfReader
     from poems import web_page, web_fonts, write_shelf
     from book import slugify, inline
-    with contextlib.redirect_stdout(io.StringIO()):
-        cfg = build(root, cfg, quiet=True)
+    made = build(root, cfg, quiet=True)
+    cfg = made.cfg
     w = cfg["site"]
     smart = cfg["shelf"]["smart_quotes"]
     out = Path(out).expanduser().resolve() if out else root / "build" / "site"
@@ -814,7 +755,7 @@ def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
         shutil.copy2(build_dir / f, dest / f)
 
     # The cover's front, as the picture on the shelf and at the top here.
-    c = cfg["_cover"]
+    c = made.cover
     dpi = 150
     x = (c["bleed"] + c["page"][0] + c["spine"]) * dpi
     subprocess.run(["pdftoppm", "-png", "-r", str(dpi), "-singlefile", "-x", str(round(x)),
@@ -823,9 +764,8 @@ def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
                     str(dest / "cover")], check=True)
 
     # Every spread as a picture, with words for anyone who can't see it.
-    from pypdf import PdfReader
     n_spreads = len(PdfReader(build_dir / f"{slug}-spreads.pdf").pages)
-    total = cfg["_total"]
+    total = made.total
     pw_px = round(c["page"][0] * w["dpi"])
     for i in range(1, n_spreads + 1):
         # A page alone (the first; the last, if it's a left-hand page) is
@@ -840,12 +780,12 @@ def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
                        check=True)
     pics = sorted((dest / "spreads").glob("s-*.png"))
     by_page = {}
-    for b in cfg["_books"]:
-        by_page.setdefault(cfg["_page_of"][b["slug"]], []).append(b["title"])
-    run = (cfg.get("_run") or [[]])[0]
+    for b in made.books:
+        by_page.setdefault(made.page_of[b["slug"]], []).append(b["title"])
+    run = made.run[0] if made.run else []
     figs = []
     for i, pic in enumerate(pics):
-        pages = [1] if i == 0 else [p for p in (2 * i, 2 * i + 1) if p <= cfg["_total"]]
+        pages = [1] if i == 0 else [p for p in (2 * i, 2 * i + 1) if p <= total]
         titles = [t for p in pages for t in by_page.get(p, [])]
         label = f"Page{'s' if len(pages) > 1 else ''} {'–'.join(map(str, pages))}"
         if titles:
@@ -854,7 +794,7 @@ def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
             if 0 <= spread < len(run):
                 alt += f", under the words “{run[spread]}”"
         elif i == 0:
-            alt = f"{label}: the title page, {cfg['title']}, {cfg['_date']}"
+            alt = f"{label}: the title page, {cfg['title']}, {made.date}"
         else:
             alt = f"{label}: the pages after the shelf"
         figs.append(f'<li><img src="spreads/{pic.name}" alt="{e(alt)}" loading="lazy"></li>')
@@ -863,8 +803,7 @@ def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
         p = root / name
         if not p.is_file():
             return ""
-        out_ = md_page(p, cfg, fills(cfg, cfg["_books"], Shelf(cfg, cfg["_books"], 1, 1), cfg["_date"]))
-        return out_.replace('<section class="back ', '<section class="text text-', 1)   # .cover is the shelf's
+        return md_page(p, cfg, made.fill).replace('<section class="back ', '<section class="text text-', 1)   # .cover is the shelf's
     rows = "".join(f'<li><a href="{f}">{e(label)}</a> <span>{e(note)}</span></li>' for f, label, note in files)
     links = "".join(f'<li><a href="{e(u)}">{e(l)}</a></li>' for l, u in w["links"])
     body = "\n".join([
@@ -872,19 +811,19 @@ def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
         '<main class="shelf-book">',
         '<div class="intro">',
         f'<img class="front" src="cover.png" alt="The cover: every book in the library on one bookcase, '
-        f'with a label reading {e(cfg["title"])}, {e(cfg["_date"])}">',
+        f'with a label reading {e(cfg["title"])}, {e(made.date)}">',
         f'<div><h1 class="book-title">{inline(cfg["title"], smart)}</h1>',
-        f'<p class="book-author">{inline(cfg["author"], smart)}, {e(cfg["_date"])}</p>',
+        f'<p class="book-author">{inline(cfg["author"], smart)}, {e(made.date)}</p>',
         *(md(n) for n in w["text"]), "</div></div>",
         '<section class="spreads" aria-label="The book, spread by spread">',
         f'<ol tabindex="0">{"".join(figs)}</ol>',
         '<p class="hint">Scroll sideways: the shelf keeps going.</p></section>',
         f'<section class="files"><h2>Read it, print it</h2><ul>{rows}</ul></section>',
-        *(f'<section class="links"><h2>Elsewhere</h2><ul>{links}</ul></section>' for _ in [1] if links),
+        f'<section class="links"><h2>Elsewhere</h2><ul>{links}</ul></section>' if links else "",
         *(f'<section class="colophon">{md(n)}</section>' for n in w["after"] if (root / n).is_file()),
         "</main>"])
     page_html = web_page(cfg["title"], body, ["../kit.css", "../bjook.css", "fonts.css", "book.css"],
-                         cfg["author"], f'{len(cfg["_books"])} books drawn as spines on one shelf',
+                         cfg["author"], f'{len(made.books)} books drawn as spines on one shelf',
                          frame="page wide")
     (dest / "index.html").write_text(page_html)
     chars = {ord(ch) for ch in html.unescape(page_html)} | set(range(0x20, 0x7F))
@@ -893,7 +832,7 @@ def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
     (dest / "book.css").write_text((Path(__file__).parent / "shelf-site.css").read_text().replace(
         "/*FONT*/", f"'{alias(t['text'])}'"))
     (dest / "book.json").write_text(json.dumps({
-        "title": cfg["title"], "author": cfg["author"], "path": path, "books": len(cfg["_books"]),
+        "title": cfg["title"], "author": cfg["author"], "path": path, "books": len(made.books),
         "updated": datetime.date.today().isoformat(),
         "inches": [round(to_pt(cfg["page"][k]) / 72, 3) for k in ("width", "height")],
         "cover_image": "cover.png", "cover": "white-1", "title_font": alias(t["title"] or t["text"]),

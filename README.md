@@ -152,7 +152,7 @@ book, and `"wall"` as a bookcase two shelves high on each spread.
 | | |
 |---|---|
 | `book.toml` | `kind = "shelf"`, then page, type, `[shelf]` (the data, mode, scale, `black_tags`, what comes after the shelf), `[cover]` and one `[faces.<key>]` per typeface. The template lists every setting. |
-| `essay.md`, `colophon.md` | Pages after the shelf, as Markdown, in the order `[shelf] back` lists them, with `"index"` for the index. The last one ends the book. `{books}`, `{date}`, `{scale}`, `{sizes}`, `{black}` fill themselves in; `{faces}` on its own line lists the typefaces, each set in itself. |
+| `essay.md`, `colophon.md` | Pages after the shelf, as Markdown, in the order `[shelf] back` lists them, with `"index"` for the index. The last one ends the book. `{books}`, `{date}`, `{scale}`, `{black}` and the size sources `{measured}`, `{catalogued}`, `{from_pages}`, `{guessed}` fill themselves in; `{faces}` on its own line lists the typefaces, each set in itself. |
 | `cover.md` | The card on the back cover. |
 | `running.txt` | Optional, named by `[shelf] running`: one line of type across the top of every shelf spread, broken at spaces once per spread so no word meets a trimmed edge, running through the fold, spaced to fill each spread, and sized so it starts on the first spread and ends on the last (after Agel and Fiore’s paperbacks). `running_caps = false` keeps the text’s own case. |
 | `style.css` | This book's overrides, after the tool's `shelf.css`. |
@@ -174,7 +174,7 @@ register. `french_fold = true` also imposes all three for French fold on
 `[riso] paper`: each leaf is two facing pages side by side (1|2, 3|4…),
 printed on one side and folded at the outer edge, as many leaves to a sheet
 as fit, with crop marks and fold dashes wherever there’s room for them; `per_sheet` caps the leaves to a sheet (one 11 × 8.5 leaf centred on 11 × 17 leaves room for the riso’s unprinted edge). One-sided printing means nothing
-ever has to back up. `duplex = true` imposes the ordinary way too: single pages on both sides, as many to a side as fit, backs mirrored to flip on the long edge, for cutting apart and perfect binding.
+ever has to back up.
 
 `bjook site` works for shelves too: the book's page shows its front
 cover, the back-cover text (`[site] text`), every spread in one row that
