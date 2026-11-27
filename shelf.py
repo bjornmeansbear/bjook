@@ -99,6 +99,8 @@ DEFAULTS = {
         "caliper": 0.0025,          # inches per page: 60# uncoated, ~400 pages to the inch.
                                     # French fold doubles it: each page is a whole sheet
         "hairline": "0.4pt",        # the spines' outline on the cover
+        "marks": False,             # the [shelf] second_spines as solid spines in the ink,
+                                    # titles knocked out to the paper
         "riso": False,              # also a riso master on [riso] paper with crop marks, and a
                                     # preview in the cover's own ink on its own paper:
         "ink": "#C2A14D",           # the ink, as a screen stand-in (riso gold)
@@ -205,7 +207,7 @@ class Shelf:
         author = b["authors"][0].split()[-1] if b.get("authors") else ""
         room = h - 8 - len(author) * per_letter
         e = html.escape
-        kind = " black" if b["slug"] in self.black else ""
+        kind = (" black" if b["slug"] in self.black else "") + (" second" if b["slug"] in self.second else "")
         fill = '<div class="fill ink2"></div>' if b["slug"] in self.second else ""
         return (f'<div class="spine{kind}" '
                 f'style="left:{x:.2f}pt;top:{y - h:.2f}pt;width:{w:.2f}pt;height:{h:.2f}pt">{fill}'
@@ -464,7 +466,8 @@ def cover_html(cfg, root, books, shelf, date, pages, faces):
 
     def pack(s):
         sh = Shelf(cfg, books, s, 1.2)
-        sh.second = set()           # the cover is one ink; second-ink spines are for the pages
+        if not cfg["cover"]["marks"]:
+            sh.second = set()       # the cover is one ink; unless asked, its spines stay plain
         rows = sh.rows(W + 6, start=-6)
         return sh, rows, sum(max(b["height"] for b in r) * s * 72 + gap for r in rows)
     lo, hi = 0.05, 0.5
@@ -663,6 +666,7 @@ def cover_riso(cfg, root, sheet, cover_pdf, out):
 body, .cover {{ background: {paper}; }}
 .spine, .card {{ background: {paper}; border-color: {ink}; color: {ink}; }}
 .line {{ background: {ink}; }}
+.cover .spine.second .fill {{ background: {ink}; }} .cover .spine.second .label {{ color: {paper}; }}
 </style>""", 1)
     look = out / f"{cfg['slug']}-cover-look.pdf"
     render(look_html, root).write_pdf(look)

@@ -104,6 +104,8 @@ em { font-style: italic; }
 .cover { position: relative; overflow: hidden; }
 .cover .line { height: 1.5pt; }
 .cover .spine { border-width: 0.4pt; }
+/* [cover] marks: a marked spine solid in the ink, its title knocked out */
+.cover .spine.second .label { color: #fff; }
 .card {
   position: absolute; transform: translateY(-50%);
   background: #fff; border: 2pt solid #000; box-sizing: border-box;
