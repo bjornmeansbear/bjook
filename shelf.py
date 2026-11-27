@@ -85,7 +85,13 @@ DEFAULTS = {
     "cover": {
         "text": "cover.md",         # the back-cover card
         "bleed": "0.125in",
-        "caliper": 0.0025,          # inches per page: 60# uncoated, ~400 pages to the inch
+        "caliper": 0.0025,          # inches per page: 60# uncoated, ~400 pages to the inch.
+                                    # French fold doubles it: each page is a whole sheet
+        "hairline": "0.4pt",        # the spines' outline on the cover
+        "riso": False,              # also a riso master on [riso] paper with crop marks, and a
+                                    # preview in the cover's own ink on its own paper:
+        "ink": "#C2A14D",           # the ink, as a screen stand-in (riso gold)
+        "paper": "#161412",         # the paper (black)
     },
     # One table per face: [faces.<key>], the key being what the catalogue's
     # "face" field says. family, weight, scale (type size multiplier), and
@@ -618,6 +624,57 @@ def spreads_pdf(cfg, src, dest):
         w.write(fh)
 
 
+def cover_riso(cfg, root, sheet, cover_pdf, out):
+    """The cover for a riso: the black-on-white cover centred on the riso's
+    paper with crop marks at the trim (the master), and the same in the
+    cover's ink on its paper (how it'll look): ink where the master is
+    black, the paper where it's white, so the cards show the paper through
+    their inked type and rules."""
+    from pypdf import PdfReader, PdfWriter, Transformation
+    import io
+    from weasyprint import HTML
+    ink, paper = cfg["cover"]["ink"], cfg["cover"]["paper"]
+    look_html = sheet.replace("</style>", f"""
+body, .cover {{ background: {paper}; }}
+.spine, .card {{ background: {paper}; border-color: {ink}; color: {ink}; }}
+.line {{ background: {ink}; }}
+</style>""", 1)
+    look = out / f"{cfg['slug']}-cover-look.pdf"
+    render(look_html, root).write_pdf(look)
+    src = PdfReader(cover_pdf).pages[0]
+    cw, ch = float(src.mediabox.width), float(src.mediabox.height)
+    W, H = (to_pt(v) for v in cfg["riso"]["paper"])
+    if cw > W or ch > H:
+        W, H = H, W
+    if cw > W or ch > H:
+        die(f"[riso] paper {cfg['riso']['paper']} is smaller than the cover ({cw/72:.2f} × {ch/72:.2f}in)")
+    x0, y0 = (W - cw) / 2, (H - ch) / 2
+    b = to_pt(cfg["cover"]["bleed"])
+    tx = [x0 + b, x0 + cw - b]                       # the trim, inside the bleed
+    ty = [y0 + b, y0 + ch - b]
+    spine_x = [x0 + b + to_pt(cfg["page"]["width"]), x0 + cw - b - to_pt(cfg["page"]["width"])]
+    gap, mark = 3, 12
+    seg = []
+    for x in tx + spine_x:
+        seg += [(x, y0 - gap, x, max(0, y0 - gap - mark)), (x, y0 + ch + gap, x, min(H, y0 + ch + gap + mark))]
+    for y in ty:
+        seg += [(x0 - gap, y, max(0, x0 - gap - mark), y), (x0 + cw + gap, y, min(W, x0 + cw + gap + mark), y)]
+    svg = "".join(f'<line x1="{a:.2f}" y1="{H - c:.2f}" x2="{d:.2f}" y2="{H - e:.2f}"/>' for a, c, d, e in seg)
+    marks = PdfReader(io.BytesIO(HTML(string=(
+        f'<style>@page {{ size: {W:.2f}pt {H:.2f}pt; margin: 0; }} body {{ margin: 0; }}</style>'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W:.2f}pt" height="{H:.2f}pt" viewBox="0 0 {W:.2f} {H:.2f}" '
+        f'stroke="#000" stroke-width="0.5">{svg}</svg>')).write_pdf())).pages[0]
+    w = PdfWriter()
+    page = w.add_blank_page(W, H)
+    page.merge_page(marks)
+    page.merge_transformed_page(src, Transformation().translate(x0, y0))
+    master = out / f"{cfg['slug']}-cover-riso.pdf"
+    with open(master, "wb") as fh:
+        w.write(fh)
+    return [(master, f"the riso master, centred on {W/72:g} × {H/72:g}in with crop and spine marks"),
+            (look, "how it'll look, in the cover's ink on its paper")]
+
+
 def build(root, cfg, snap=None, quiet=False):
     cfg = checked(cfg, root)
     data, books = catalogue(root, cfg)
@@ -667,8 +724,12 @@ def build(root, cfg, snap=None, quiet=False):
     sheet, info = cover_html(cfg, root, books, shelf, date, total, faces)
     cfg["_cover"] = info
     (out / "cover.html").write_text(sheet)
+    sheet = sheet.replace("</style>", f".cover .spine {{ border-width: {cfg['cover']['hairline']}; }}\n</style>", 1)
     cover_pdf = out / f"{cfg['slug']}-cover.pdf"
     render(sheet, root).write_pdf(cover_pdf)
+    cover_files = []
+    if cfg["cover"]["riso"]:
+        cover_files = cover_riso(cfg, root, sheet, cover_pdf, out)
 
     stamp = stamp_now()
     t = cfg["type"]
@@ -691,6 +752,8 @@ def build(root, cfg, snap=None, quiet=False):
             print(f"-> {f}\n   double-sided, {what}: {n} sheets, {per_side} pages a side, flip on the long edge")
         print(f"-> {cover_pdf}\n   {info['W']:.3f} × {info['H']:.3f}in with bleed, spine {info['spine']:.3f}in, "
               f"every book at {info['scale']:.3f} on {info['shelves']} shelves")
+        for f, what in cover_files:
+            print(f"-> {f}\n   {what}")
         print(f"-> {out / 'preview.html'}")
         if info["spine"] < 0.25:
             print(f"   ! the spine is {info['spine']:.2f}in: too thin for type (about 0.25in, 100 pages, is the usual minimum)")
