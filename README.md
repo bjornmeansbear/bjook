@@ -158,7 +158,7 @@ book, and `"wall"` as a bookcase two shelves high on each spread.
 | `style.css` | This book's overrides, after the tool's `shelf.css`. |
 
 Output: `build/<slug>.pdf`, the pages in reading order, padded to an even
-count so the last item lands on the last page; and `build/<slug>-cover.pdf`,
+count so the last item lands on the last page; `build/<slug>-spreads.pdf`, the same as spreads for reading on screen; and `build/<slug>-cover.pdf`,
 back, spine and front as one sheet with bleed, every book at once at the
 largest scale that fits, with the title and the back text on label cards.
 The spine width comes from the page count and `[cover] caliper`. The build
@@ -173,7 +173,7 @@ look, in both colours, and a master per drum (`<slug>-black.pdf`,
 register. `french_fold = true` also imposes all three for French fold on
 `[riso] paper`: each leaf is two facing pages side by side (1|2, 3|4…),
 printed on one side and folded at the outer edge, as many leaves to a sheet
-as fit, with crop marks and fold dashes. One-sided printing means nothing
+as fit, with crop marks and fold dashes (`marks = false` fills the paper edge to edge: 11 × 17 holds two leaves, one cut each). One-sided printing means nothing
 ever has to back up. `duplex = true` imposes the ordinary way too: single pages on both sides, as many to a side as fit, backs mirrored to flip on the long edge, for cutting apart and perfect binding.
 
 `fetch`, `specimen` and `site` are for poems only so far.

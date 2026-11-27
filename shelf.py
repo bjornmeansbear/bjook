@@ -71,6 +71,8 @@ DEFAULTS = {
                                     # as fit, backs laid out to flip on the long edge; cut apart
                                     # and perfect bind
         "paper": ["12in", "18in"],  # the sheet the riso takes; leaves go on it as many as fit
+        "marks": True,              # crop marks; false lets leaves fill the paper edge to edge
+                                    # (11 x 17 holds two 11 x 8.5 leaves exactly: one cut each)
     },
     "cover": {
         "text": "cover.md",         # the back-cover card
@@ -476,10 +478,11 @@ def french_fold(cfg, pdfs, out):
     pw, ph = to_pt(cfg["page"]["width"]), to_pt(cfg["page"]["height"])
     W, H = (to_pt(v) for v in cfg["riso"]["paper"])
     leaf_w, leaf_h = 2 * pw, ph
-    if leaf_w > W - 36 or leaf_h > H - 36:
+    room = 36 if cfg["riso"]["marks"] else 0
+    if leaf_w > W - room + 0.01 or leaf_h > H - room + 0.01:
         W, H = H, W                                   # try the paper the other way round
-    per = int((H - 36) // leaf_h)
-    if leaf_w > W - 36 or per < 1:
+    per = int((H - room + 0.01) // leaf_h)
+    if leaf_w > W - room + 0.01 or per < 1:
         die(f"[riso] paper {cfg['riso']['paper']} can't hold a {leaf_w/72:g} × {leaf_h/72:g}in leaf with room for marks")
     x0 = (W - leaf_w) / 2
     y_top = (H + per * leaf_h) / 2                    # the leaves sit centred on the sheet
@@ -508,7 +511,8 @@ def french_fold(cfg, pdfs, out):
         w = PdfWriter()
         for at in range(0, len(leaves), per):
             sheet = w.add_blank_page(W, H)
-            sheet.merge_page(marks_pdf.pages[0])
+            if room:
+                sheet.merge_page(marks_pdf.pages[0])
             for slot, (left, right) in enumerate(leaves[at:at + per]):
                 y = ys[slot + 1]
                 sheet.merge_transformed_page(left, Transformation().translate(x0, y))
@@ -572,6 +576,26 @@ def duplex(cfg, pdfs, out):
     return written, slots
 
 
+def spreads_pdf(cfg, src, dest):
+    """The book as it reads, for a screen: the first page alone on the
+    right, then each spread side by side, the last page alone if it's a
+    left-hand page."""
+    from pypdf import PdfReader, PdfWriter, Transformation
+    pw, ph = to_pt(cfg["page"]["width"]), to_pt(cfg["page"]["height"])
+    pages = PdfReader(src).pages
+    w = PdfWriter()
+    groups = [(None, pages[0])] + [(pages[i], pages[i + 1] if i + 1 < len(pages) else None)
+                                    for i in range(1, len(pages), 2)]
+    for left, right in groups:
+        sheet = w.add_blank_page(2 * pw, ph)
+        if left is not None:
+            sheet.merge_page(left)
+        if right is not None:
+            sheet.merge_transformed_page(right, Transformation().translate(pw, 0))
+    with open(dest, "wb") as fh:
+        w.write(fh)
+
+
 def build(root, cfg, snap=None, quiet=False):
     cfg = checked(cfg, root)
     data, books = catalogue(root, cfg)
@@ -608,6 +632,8 @@ def build(root, cfg, snap=None, quiet=False):
         doc = render(look, root)
     doc.write_pdf(pdf)
     total = len(doc.pages)
+    spreads_file = out / f"{cfg['slug']}-spreads.pdf"
+    spreads_pdf(cfg, pdf, spreads_file)
     folded, per_sheet = [], 0
     if cfg["riso"]["french_fold"]:
         folded, per_sheet = french_fold(cfg, {"look": pdf, **masters}, out)
@@ -629,11 +655,13 @@ def build(root, cfg, snap=None, quiet=False):
         print(f"-> {pdf}\n   {total} pages: {len(books)} books on {n_rows} shelves, "
               f"{len(shelf.black)} black spines" + (", 1 blank page before the last" if blanks else "")
               + (f", the running line at {run_size:.1f}pt" if run_size else ""))
+        print(f"-> {spreads_file}\n   the same, as spreads, for reading on screen and sharing")
         for key, f in masters.items():
             print(f"-> {f}\n   the {key} drum, as a black master")
         for key, f, n in folded:
             what = "the look" if key == "look" else f"the {key} drum"
-            print(f"-> {f}\n   French fold, {what}: {n} sheets, {per_sheet} leaves to a sheet, one side only")
+            print(f"-> {f}\n   French fold, {what}: {n} sheets, {per_sheet} leaves to a sheet, one side only"
+                  + ("" if cfg["riso"]["marks"] else ", no marks"))
         for key, f, n in duplexed:
             what = "the look" if key == "look" else f"the {key} drum"
             print(f"-> {f}\n   double-sided, {what}: {n} sheets, {per_side} pages a side, flip on the long edge")
