@@ -1,7 +1,7 @@
 """
 Shelf: a catalogue of books drawn as spines standing on a shelf, A to Z, at
 a fraction of their real size. Built for "A Library", the books on Kristian
-Bjørnard's office shelves (library.wjerk.shop), but any catalogue with a
+Bjørnard's library (library.wjerk.shop), but any catalogue with a
 height and a thickness for each book will do.
 
 The book is planned by spread. A shelf runs the width of a spread, straight
