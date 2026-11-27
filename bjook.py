@@ -93,7 +93,7 @@ def main():
     s = sub.add_parser("specimen", help="poems: one poem set in several faces")
     s.add_argument("families", nargs="*")
     s.add_argument("--poem", help="poem filename to use")
-    web = sub.add_parser("site", help="poems: the book as a website, one page per poem")
+    web = sub.add_parser("site", help="poems and shelf: the book as a website")
     web.add_argument("--out", help="the site folder; each book gets a folder inside "
                                    "(default: build/site in the book)")
     web.add_argument("--shelf", default="Bjorn Means Book", metavar="TITLE",
@@ -116,8 +116,11 @@ def main():
         only(kind, "poems", "specimen")
         poems.specimen(root, cfg, args.families, args.poem)
     elif args.cmd == "site":
-        only(kind, "poems", "site")
-        poems.site(root, cfg, args.out, args.shelf)
+        if kind == "shelf":
+            shelf.site(root, cfg, args.out, args.shelf)
+        else:
+            only(kind, "poems", "site")
+            poems.site(root, cfg, args.out, args.shelf)
 
 
 if __name__ == "__main__":

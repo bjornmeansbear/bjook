@@ -217,6 +217,12 @@ a:hover { color: var(--color-accent-hover); }
 }
 .cover:hover,
 .cover:active { background: var(--wjerk-black); color: var(--cover); }
+/* A cover drawn from the book's own printed cover: the picture fills it,
+   and hover inverts the picture the way it inverts a drawn cover. */
+.cover-image { padding: 0; background: #fff; overflow: hidden; }
+.cover-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cover-image:hover img,
+.cover-image:active img { filter: invert(1); }
 .cover-title {
   font-family: var(--font-title), var(--font-sans);
   font-size: max(0.8125rem, calc(var(--w) * var(--inch) * 0.11));   /* a share of the cover's width */

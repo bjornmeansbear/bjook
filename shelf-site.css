@@ -1,0 +1,70 @@
+/* A shelf book's page on a Bjook site, after the site's bjook.css.
+   The book's own typeface for everything; the spreads are pictures of
+   paper, so they keep the paper's white and a ruled edge, as objects do. */
+
+:root {
+  --font-text: /*FONT*/; --font-display: /*FONT*/; --font-title: /*FONT*/;
+  --font-head: /*FONT*/; --head-weight: 400; --folio-weight: 600;
+}
+body { font-family: var(--font-text), var(--font-sans); }
+
+/* The cover beside the title and the back-cover words; stacked on a phone. */
+.intro {
+  display: grid;
+  gap: 1.5rem clamp(1.5rem, 4vw, 4.5rem);
+  align-items: end;
+  margin-bottom: clamp(3rem, 8vw, 6rem);
+}
+@media (min-width: 40rem) {
+  .intro { grid-template-columns: minmax(12rem, 22rem) minmax(0, 36rem); }
+}
+.intro .front {
+  display: block;
+  width: min(22rem, 100%);
+  height: auto;
+  border: 2px solid var(--wjerk-black);
+  background: #fff;
+}
+.intro .book-title { font-weight: 600; letter-spacing: -0.02em; }
+.intro .book-author { margin-bottom: 1.5rem; }
+.intro .text p { margin: 0 0 1.5rem; max-width: 36rem; }
+
+/* The book, spread after spread, in one row that scrolls sideways and
+   runs off the edge of the window: on screen too, the shelf keeps going. */
+.spreads { margin: 0 calc(-1 * clamp(1.5rem, 6vw, 6rem)); }
+.spreads ol {
+  list-style: none;
+  margin: 0;
+  padding: 0 clamp(1.5rem, 6vw, 6rem) 1.5rem;
+  display: flex;
+  gap: clamp(0.75rem, 2vw, 1.5rem);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: clamp(1.5rem, 6vw, 6rem);
+}
+.spreads ol:focus-visible { outline: 3px solid var(--color-accent); outline-offset: -3px; }
+.spreads li { flex: none; scroll-snap-align: start; }
+.spreads img {
+  display: block;
+  height: clamp(12rem, min(62vh, 62vw), 39rem);
+  width: auto;
+  border: 2px solid var(--wjerk-black);
+  background: #fff;
+}
+.spreads .hint {
+  margin: 0;
+  padding: 0 clamp(1.5rem, 6vw, 6rem);
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+}
+
+/* The files: what each is for, plainly. */
+.files, .links, .colophon { max-width: 36rem; margin-top: clamp(3rem, 8vw, 6rem); }
+.files h2, .links h2 { font-size: 1rem; line-height: 1.5rem; font-weight: 600; margin: 0 0 0.75rem; }
+.files ul, .links ul { list-style: none; margin: 0; padding: 0; }
+.files li, .links li { padding: 0.375rem 0; border-top: 1px solid var(--color-text); }
+.files li a, .links li a { display: inline-block; padding: 0.25rem 0; font-weight: 600; }
+.files li span { display: block; font-size: 0.875rem; line-height: 1.5rem; }
+.colophon .text { font-size: 0.875rem; line-height: 1.5rem; }
+.colophon .text h1 { font-size: 1rem; line-height: 1.5rem; font-weight: 600; margin: 0 0 0.75rem; }
+.colophon .faces { list-style: none; margin: 0 0 1.5rem; padding: 0; }

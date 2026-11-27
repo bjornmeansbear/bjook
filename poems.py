@@ -335,6 +335,43 @@ ABOUT = [
 ]
 
 
+def write_shelf(out, shelf_title="Bjorn Means Book", smart=True):
+    """The pages every book in a site folder shares: the shelf at the front,
+    listing each book that has a book.json, newest first, and the page about
+    Bjook. Rewritten by whichever book was published last."""
+    shutil.copy2(HERE / "kit.css", out / "kit.css")
+    shutil.copy2(HERE / "site.css", out / "bjook.css")
+    books = sorted((json.loads(p.read_text()) for p in out.glob("*/book.json")),
+                   key=lambda b: b["updated"], reverse=True)
+    def cover(b):
+        # A book whose site made a picture of its cover stands as that picture.
+        if b.get("cover_image"):
+            return (f'<li><a class="cover cover-image" href="{b["path"]}/index.html" '
+                    f'style="--w: {b["inches"][0]}; --h: {b["inches"][1]}">'
+                    f'<img src="{b["path"]}/{b["cover_image"]}" alt="{html.escape(b["title"])}"></a></li>')
+        return (f'<li><a class="cover" href="{b["path"]}/index.html" style="--w: {b["inches"][0]}; '
+        f'--h: {b["inches"][1]}; --cover: var(--{b["cover"]}); --font-title: \'{b["title_font"]}\'; '
+        f'--font-head: \'{b["head_font"]}\'; --head-weight: {b["head_weight"]}">'
+        f'<span class="cover-title">{inline(b["title"], smart)}</span>'
+        f'<span class="cover-author" style="{html.escape(b["head_css"])}">{inline(b["author"], smart)}</span>'
+        "</a></li>")
+    shelf = "".join(cover(b) for b in books)
+    (out / "index.html").write_text(web_page(
+        shelf_title,
+        f'<main><h1 class="site-title">{inline(shelf_title, smart)}</h1>'
+        f'<ul class="shelf">{shelf}<li class="rest" role="presentation"></li></ul>'
+        '<p class="shelf-note"><a href="bjook.html">Made with Bjook</a></p></main>',
+        ["kit.css", "bjook.css"] + [f'{b["path"]}/fonts.css' for b in books], frame=""))
+    (out / "bjook.html").write_text(web_page(
+        "Bjook", "\n".join([
+            f'<header class="head"><a href="index.html">{inline(shelf_title, smart)}</a></header>',
+            "<main><h1>Bjook</h1>",
+            *(f"<p>{p}</p>" for p in ABOUT),
+            "</main>"]),
+        ["kit.css", "bjook.css"], description="The tool that makes these books."))
+    print(f"-> {out / 'index.html'}\n   the shelf: {len(books)} book{'s' if len(books) != 1 else ''}")
+
+
 def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
     """The book as a website: a front page with the contents, one page per
     poem, the PDFs to download, and a shelf page listing every book that has
@@ -435,34 +472,9 @@ def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
         "cover": cover, "title_font": alias(t["title"]), "head_font": alias(h["font"]),
         "head_weight": h["weight"], "head_css": h["css"]}, indent=2) + "\n")
 
-    # Shared by every book in the folder, and rewritten by whichever was built last.
-    shutil.copy2(kit, out / "kit.css")
-    shutil.copy2(HERE / "site.css", out / "bjook.css")
-    books = sorted((json.loads(p.read_text()) for p in out.glob("*/book.json")),
-                   key=lambda b: b["updated"], reverse=True)
-    shelf = "".join(
-        f'<li><a class="cover" href="{b["path"]}/index.html" style="--w: {b["inches"][0]}; '
-        f'--h: {b["inches"][1]}; --cover: var(--{b["cover"]}); --font-title: \'{b["title_font"]}\'; '
-        f'--font-head: \'{b["head_font"]}\'; --head-weight: {b["head_weight"]}">'
-        f'<span class="cover-title">{inline(b["title"], smart)}</span>'
-        f'<span class="cover-author" style="{html.escape(b["head_css"])}">{inline(b["author"], smart)}</span>'
-        "</a></li>" for b in books)
-    (out / "index.html").write_text(web_page(
-        shelf_title,
-        f'<main><h1 class="site-title">{inline(shelf_title, smart)}</h1>'
-        f'<ul class="shelf">{shelf}<li class="rest" role="presentation"></li></ul>'
-        '<p class="shelf-note"><a href="bjook.html">Made with Bjook</a></p></main>',
-        ["kit.css", "bjook.css"] + [f'{b["path"]}/fonts.css' for b in books], frame=""))
-    (out / "bjook.html").write_text(web_page(
-        "Bjook", "\n".join([
-            f'<header class="head"><a href="index.html">{inline(shelf_title, smart)}</a></header>',
-            "<main><h1>Bjook</h1>",
-            *(f"<p>{p}</p>" for p in ABOUT),
-            "</main>"]),
-        ["kit.css", "bjook.css"], description="The tool that makes these books."))
+    write_shelf(out, shelf_title, smart)
     print(f"-> {dest / 'index.html'}\n   {len(poems)} poems, {len(pages)} pages, "
           f"{len(list((dest / 'fonts').iterdir()))} fonts")
-    print(f"-> {out / 'index.html'}\n   the shelf: {len(books)} book{'s' if len(books) != 1 else ''}")
 
 
 # ----------------------------------------------------------------- fetch

@@ -176,7 +176,13 @@ printed on one side and folded at the outer edge, as many leaves to a sheet
 as fit, with crop marks and fold dashes wherever there’s room for them; `per_sheet` caps the leaves to a sheet (one 11 × 8.5 leaf centred on 11 × 17 leaves room for the riso’s unprinted edge). One-sided printing means nothing
 ever has to back up. `duplex = true` imposes the ordinary way too: single pages on both sides, as many to a side as fit, backs mirrored to flip on the long edge, for cutting apart and perfect binding.
 
-`fetch`, `specimen` and `site` are for poems only so far.
+`bjook site` works for shelves too: the book's page shows its front
+cover, the back-cover text (`[site] text`), every spread in one row that
+scrolls sideways, the files to read and to print (the riso masters
+included), and `[site] links`. The shared shelf shows the book as its real
+cover.
+
+`fetch` and `specimen` are for poems only so far.
 
 ## Publishing the site
 

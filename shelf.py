@@ -74,6 +74,14 @@ DEFAULTS = {
         "marks": True,              # crop marks and fold dashes, wherever there's room for them
         "per_sheet": 0,             # leaves to a sheet; 0 = as many as fit
     },
+    "site": {                       # `bjook site`: the book's page on a shared Bjook site
+        "path": "",                 # its folder; empty = from the title
+        "text": ["cover.md"],       # Markdown shown on the page, in order, before the spreads
+        "after": [],                # and after the downloads (the colophon sets each face in itself,
+                                    # which needs the spine fonts on the web too)
+        "links": [],                # [[label, url], ...]: where else the book lives
+        "dpi": 110,                 # the spreads as pictures, at this resolution
+    },
     "cover": {
         "text": "cover.md",         # the back-cover card
         "bleed": "0.125in",
@@ -316,6 +324,7 @@ def book_html(cfg, root, books, shelf, date, blanks=0, faces=""):
     rows = shelf.rows(2 * page_w - 2 * edge)
     spreads = -(-len(rows) // per)
     run = running_line(cfg, root, spreads, page_w, faces) if s["running"] else None
+    cfg["_run"] = run
     run_size = run[2] if run else 0
 
     def running(spread, k):
@@ -418,7 +427,8 @@ def cover_html(cfg, root, books, shelf, date, pages, faces):
 <h1>{e(cfg['title'])}</h1><p class="date">{e(date)}</p></div>
 <div class="card back-card" style="left:{bleed + 0.4 * 72:.2f}pt;top:{back_y:.2f}pt">{blurb}</div>
 </div></body></html>"""
-    return sheet, {"scale": lo, "shelves": len(rows), "spine": spine_w / 72, "W": W / 72, "H": H / 72}
+    return sheet, {"scale": lo, "shelves": len(rows), "spine": spine_w / 72, "W": W / 72, "H": H / 72,
+                   "bleed": bleed / 72, "page": [page_w / 72, page_h / 72]}
 
 
 # ----------------------------------------------------------------- build
@@ -653,7 +663,9 @@ def build(root, cfg, snap=None, quiet=False):
     if cfg["riso"]["duplex"]:
         duplexed, per_side = duplex(cfg, {"look": pdf, **masters}, out)
 
+    cfg["_page_of"], cfg["_date"], cfg["_books"], cfg["_total"] = shelf.page_of, date, books, total
     sheet, info = cover_html(cfg, root, books, shelf, date, total, faces)
+    cfg["_cover"] = info
     (out / "cover.html").write_text(sheet)
     cover_pdf = out / f"{cfg['slug']}-cover.pdf"
     render(sheet, root).write_pdf(cover_pdf)
@@ -699,3 +711,129 @@ def sources(root):
     except Exception:
         pass
     return files
+
+
+# ------------------------------------------------------------------ site
+
+def site(root, cfg, out=None, shelf_title="Bjorn Means Book"):
+    """The book's page on a Bjook site: its cover, every spread in one row
+    that scrolls sideways (on screen too the shelf keeps going), the files
+    to read and to print it, and links. The shelf at the front of the site
+    gets the book's real cover."""
+    import contextlib, io, json, shutil, subprocess, datetime
+    from poems import web_page, web_fonts, write_shelf
+    from book import slugify, inline
+    with contextlib.redirect_stdout(io.StringIO()):
+        cfg = build(root, cfg, quiet=True)
+    w = cfg["site"]
+    smart = cfg["shelf"]["smart_quotes"]
+    out = Path(out).expanduser().resolve() if out else root / "build" / "site"
+    path = w["path"] or slugify(cfg["title"])
+    dest = out / path
+    if dest.exists() and not (dest / "book.json").is_file():
+        die(f"{dest} exists and isn't a book this tool wrote — not replacing it")
+    shutil.rmtree(dest, ignore_errors=True)
+    (dest / "fonts").mkdir(parents=True)
+    (dest / "spreads").mkdir()
+    build_dir, slug = root / "build", cfg["slug"]
+    e = html.escape
+
+    # The files: to read, and to print.
+    files = [(f"{slug}-spreads.pdf", "Read it", "as spreads, the way the book opens"),
+             (f"{slug}.pdf", "Page by page", "in reading order")]
+    if cfg["riso"]["french_fold"]:
+        name = cfg["riso"]["name"]
+        files += [(f"{slug}-french-fold-black.pdf", "Riso master: black", "French fold, one leaf to a sheet"),
+                  (f"{slug}-french-fold-{name}.pdf", f"Riso master: {name}", "the second drum, same sheets"),
+                  (f"{slug}-french-fold.pdf", "Both inks together", "to check a test print against")]
+    files.append((f"{slug}-cover.pdf", "The cover", "back, spine and front, with bleed"))
+    for f, *_ in files:
+        shutil.copy2(build_dir / f, dest / f)
+
+    # The cover's front, as the picture on the shelf and at the top here.
+    c = cfg["_cover"]
+    dpi = 150
+    x = (c["bleed"] + c["page"][0] + c["spine"]) * dpi
+    subprocess.run(["pdftoppm", "-png", "-r", str(dpi), "-singlefile", "-x", str(round(x)),
+                    "-y", str(round(c["bleed"] * dpi)), "-W", str(round(c["page"][0] * dpi)),
+                    "-H", str(round(c["page"][1] * dpi)), str(build_dir / f"{slug}-cover.pdf"),
+                    str(dest / "cover")], check=True)
+
+    # Every spread as a picture, with words for anyone who can't see it.
+    from pypdf import PdfReader
+    n_spreads = len(PdfReader(build_dir / f"{slug}-spreads.pdf").pages)
+    total = cfg["_total"]
+    pw_px = round(c["page"][0] * w["dpi"])
+    for i in range(1, n_spreads + 1):
+        # A page alone (the first; the last, if it's a left-hand page) is
+        # cut out of its half-empty spread.
+        crop = []
+        if i == 1:
+            crop = ["-x", str(pw_px), "-W", str(pw_px)]
+        elif i == n_spreads and total % 2 == 0:
+            crop = ["-x", "0", "-W", str(pw_px)]
+        subprocess.run(["pdftoppm", "-png", "-r", str(w["dpi"]), "-f", str(i), "-l", str(i), "-singlefile",
+                        *crop, str(build_dir / f"{slug}-spreads.pdf"), str(dest / "spreads" / f"s-{i:02d}")],
+                       check=True)
+    pics = sorted((dest / "spreads").glob("s-*.png"))
+    by_page = {}
+    for b in cfg["_books"]:
+        by_page.setdefault(cfg["_page_of"][b["slug"]], []).append(b["title"])
+    run = (cfg.get("_run") or [[]])[0]
+    figs = []
+    for i, pic in enumerate(pics):
+        pages = [1] if i == 0 else [p for p in (2 * i, 2 * i + 1) if p <= cfg["_total"]]
+        titles = [t for p in pages for t in by_page.get(p, [])]
+        label = f"Page{'s' if len(pages) > 1 else ''} {'–'.join(map(str, pages))}"
+        if titles:
+            alt = f"{label}: {len(titles)} spines on the shelf, from {titles[0]} to {titles[-1]}"
+            spread = i - 1
+            if 0 <= spread < len(run):
+                alt += f", under the words “{run[spread]}”"
+        elif i == 0:
+            alt = f"{label}: the title page, {cfg['title']}, {cfg['_date']}"
+        else:
+            alt = f"{label}: the pages after the shelf"
+        figs.append(f'<li><img src="spreads/{pic.name}" alt="{e(alt)}" loading="lazy"></li>')
+
+    def md(name):
+        p = root / name
+        if not p.is_file():
+            return ""
+        out_ = md_page(p, cfg, fills(cfg, cfg["_books"], Shelf(cfg, cfg["_books"], 1, 1), cfg["_date"]))
+        return out_.replace('<section class="back ', '<section class="text text-', 1)   # .cover is the shelf's
+    rows = "".join(f'<li><a href="{f}">{e(label)}</a> <span>{e(note)}</span></li>' for f, label, note in files)
+    links = "".join(f'<li><a href="{e(u)}">{e(l)}</a></li>' for l, u in w["links"])
+    body = "\n".join([
+        f'<header class="head"><a href="../index.html">{inline(shelf_title, smart)}</a></header>',
+        '<main class="shelf-book">',
+        '<div class="intro">',
+        f'<img class="front" src="cover.png" alt="The cover: every book in the library on one bookcase, '
+        f'with a label reading {e(cfg["title"])}, {e(cfg["_date"])}">',
+        f'<div><h1 class="book-title">{inline(cfg["title"], smart)}</h1>',
+        f'<p class="book-author">{inline(cfg["author"], smart)}, {e(cfg["_date"])}</p>',
+        *(md(n) for n in w["text"]), "</div></div>",
+        '<section class="spreads" aria-label="The book, spread by spread">',
+        f'<ol tabindex="0">{"".join(figs)}</ol>',
+        '<p class="hint">Scroll sideways: the shelf keeps going.</p></section>',
+        f'<section class="files"><h2>Read it, print it</h2><ul>{rows}</ul></section>',
+        *(f'<section class="links"><h2>Elsewhere</h2><ul>{links}</ul></section>' for _ in [1] if links),
+        *(f'<section class="colophon">{md(n)}</section>' for n in w["after"] if (root / n).is_file()),
+        "</main>"])
+    page_html = web_page(cfg["title"], body, ["../kit.css", "../bjook.css", "fonts.css", "book.css"],
+                         cfg["author"], f'{len(cfg["_books"])} books drawn as spines on one shelf',
+                         frame="page wide")
+    (dest / "index.html").write_text(page_html)
+    chars = {ord(ch) for ch in html.unescape(page_html)} | set(range(0x20, 0x7F))
+    (dest / "fonts.css").write_text(web_fonts(cfg, dest / "fonts", chars) + "\n")
+    t = cfg["type"]
+    (dest / "book.css").write_text((Path(__file__).parent / "shelf-site.css").read_text().replace(
+        "/*FONT*/", f"'{alias(t['text'])}'"))
+    (dest / "book.json").write_text(json.dumps({
+        "title": cfg["title"], "author": cfg["author"], "path": path, "books": len(cfg["_books"]),
+        "updated": datetime.date.today().isoformat(),
+        "inches": [round(to_pt(cfg["page"][k]) / 72, 3) for k in ("width", "height")],
+        "cover_image": "cover.png", "cover": "white-1", "title_font": alias(t["title"] or t["text"]),
+        "head_font": alias(t["text"]), "head_weight": 400, "head_css": ""}, indent=2) + "\n")
+    print(f"-> {dest / 'index.html'}\n   {len(pics)} spreads, {len(files)} files to download")
+    write_shelf(out, shelf_title, smart)
