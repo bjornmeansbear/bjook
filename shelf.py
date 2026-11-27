@@ -238,6 +238,12 @@ def fills(cfg, books, shelf, date):
             "measured": n.get("measured", 0),
             "catalogued": n.get("library-of-congress", 0) + n.get("open-library", 0),
             "from_pages": n.get("pages", 0), "guessed": n.get("guessed", 0),
+            # the spine's two numbers counted separately (the catalogue's
+            # "tall" and "thick" fields): measured, recorded, from pages, guessed
+            **{f"{part}_{how}": sum(1 for b in books if b.get(field) in kinds)
+               for part, field in (("height", "tall"), ("thick", "thick"))
+               for how, kinds in (("measured", {"measured"}), ("known", {"measured", "recorded"}),
+                                  ("from_pages", {"pages"}), ("guessed", {"guessed"}))},
             "black": len(shelf.black), "faces": f'<ul class="faces">{faces}</ul>',
             "title": cfg["title"], "author": cfg["author"]}
 
