@@ -71,8 +71,8 @@ DEFAULTS = {
                                     # as fit, backs laid out to flip on the long edge; cut apart
                                     # and perfect bind
         "paper": ["12in", "18in"],  # the sheet the riso takes; leaves go on it as many as fit
-        "marks": True,              # crop marks; false lets leaves fill the paper edge to edge
-                                    # (11 x 17 holds two 11 x 8.5 leaves exactly: one cut each)
+        "marks": True,              # crop marks and fold dashes, wherever there's room for them
+        "per_sheet": 0,             # leaves to a sheet; 0 = as many as fit
     },
     "cover": {
         "text": "cover.md",         # the back-cover card
@@ -478,24 +478,36 @@ def french_fold(cfg, pdfs, out):
     pw, ph = to_pt(cfg["page"]["width"]), to_pt(cfg["page"]["height"])
     W, H = (to_pt(v) for v in cfg["riso"]["paper"])
     leaf_w, leaf_h = 2 * pw, ph
-    room = 36 if cfg["riso"]["marks"] else 0
-    if leaf_w > W - room + 0.01 or leaf_h > H - room + 0.01:
+    if leaf_w > W + 0.01 or leaf_h > H + 0.01:
         W, H = H, W                                   # try the paper the other way round
-    per = int((H - room + 0.01) // leaf_h)
-    if leaf_w > W - room + 0.01 or per < 1:
-        die(f"[riso] paper {cfg['riso']['paper']} can't hold a {leaf_w/72:g} × {leaf_h/72:g}in leaf with room for marks")
+    if leaf_w > W + 0.01 or leaf_h > H + 0.01:
+        die(f"[riso] paper {cfg['riso']['paper']} can't hold a {leaf_w/72:g} × {leaf_h/72:g}in leaf")
+    per = int((H + 0.01) // leaf_h)
+    if cfg["riso"]["per_sheet"]:
+        per = min(per, cfg["riso"]["per_sheet"])
     x0 = (W - leaf_w) / 2
     y_top = (H + per * leaf_h) / 2                    # the leaves sit centred on the sheet
     mark, gap = 18, 6                                 # crop mark length and its gap from the cut
-    lines = []
+    need = gap + mark
+    side, ends = x0 >= need, (H - per * leaf_h) / 2 >= need   # room for marks beside, above and below
+    lines, dashes = [], []
     xs = [x0, x0 + leaf_w]
     ys = [y_top - i * leaf_h for i in range(per + 1)]
-    for x in xs:                                      # vertical cuts: marks above and below
-        lines += [(x, H - (H - ys[0]) + gap, x, ys[0] + gap + mark), (x, ys[-1] - gap, x, ys[-1] - gap - mark)]
-    for y in ys:                                      # horizontal cuts: marks left and right
-        lines += [(x0 - gap, y, x0 - gap - mark, y), (x0 + leaf_w + gap, y, x0 + leaf_w + gap + mark, y)]
-    fold = x0 + pw                                    # the fold: dashes in the margins
-    dashes = [(fold, ys[0] + gap, fold, ys[0] + gap + mark), (fold, ys[-1] - gap, fold, ys[-1] - gap - mark)]
+    if cfg["riso"]["marks"]:
+        if ends and x0 > 0.01:                        # vertical cuts: marks above and below
+            for x in xs:
+                lines += [(x, ys[0] + gap, x, ys[0] + need), (x, ys[-1] - gap, x, ys[-1] - need)]
+        if side:                                      # horizontal cuts: marks left and right
+            for y in ys:
+                lines += [(x0 - gap, y, x0 - need, y), (x0 + leaf_w + gap, y, x0 + leaf_w + need, y)]
+        elif ends:                                    # no room beside: mark the top and bottom
+            for y in (ys[0], ys[-1]):                 # cuts at the paper's edges instead
+                for x in (0, W - mark):
+                    lines.append((x, y, x + mark, y))
+        if ends:                                      # the fold: dashes above and below
+            fold = x0 + pw
+            dashes = [(fold, ys[0] + gap, fold, ys[0] + need), (fold, ys[-1] - gap, fold, ys[-1] - need)]
+    room = bool(lines or dashes)
     svg_lines = "".join(f'<line x1="{a:.2f}" y1="{H - b:.2f}" x2="{c:.2f}" y2="{H - d:.2f}"/>' for a, b, c, d in lines)
     svg_dash = "".join(f'<line x1="{a:.2f}" y1="{H - b:.2f}" x2="{c:.2f}" y2="{H - d:.2f}" stroke-dasharray="3 3"/>' for a, b, c, d in dashes)
     marks_html = (f'<style>@page {{ size: {W:.2f}pt {H:.2f}pt; margin: 0; }} body {{ margin: 0; }}</style>'
@@ -660,8 +672,8 @@ def build(root, cfg, snap=None, quiet=False):
             print(f"-> {f}\n   the {key} drum, as a black master")
         for key, f, n in folded:
             what = "the look" if key == "look" else f"the {key} drum"
-            print(f"-> {f}\n   French fold, {what}: {n} sheets, {per_sheet} leaves to a sheet, one side only"
-                  + ("" if cfg["riso"]["marks"] else ", no marks"))
+            print(f"-> {f}\n   French fold, {what}: {n} sheets, {per_sheet} leaf{'' if per_sheet == 1 else 'ves'} to a sheet, one side only"
+                  )
         for key, f, n in duplexed:
             what = "the look" if key == "look" else f"the {key} drum"
             print(f"-> {f}\n   double-sided, {what}: {n} sheets, {per_side} pages a side, flip on the long edge")

@@ -173,7 +173,7 @@ look, in both colours, and a master per drum (`<slug>-black.pdf`,
 register. `french_fold = true` also imposes all three for French fold on
 `[riso] paper`: each leaf is two facing pages side by side (1|2, 3|4…),
 printed on one side and folded at the outer edge, as many leaves to a sheet
-as fit, with crop marks and fold dashes (`marks = false` fills the paper edge to edge: 11 × 17 holds two leaves, one cut each). One-sided printing means nothing
+as fit, with crop marks and fold dashes wherever there’s room for them; `per_sheet` caps the leaves to a sheet (one 11 × 8.5 leaf centred on 11 × 17 leaves room for the riso’s unprinted edge). One-sided printing means nothing
 ever has to back up. `duplex = true` imposes the ordinary way too: single pages on both sides, as many to a side as fit, backs mirrored to flip on the long edge, for cutting apart and perfect binding.
 
 `fetch`, `specimen` and `site` are for poems only so far.
