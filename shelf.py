@@ -12,7 +12,8 @@ drawn on both pages and each page clips it, so the halves meet when the book
 lies open.
 
 Each spine is set in its book's own typeface, so the book is also a type
-specimen. Books with chosen tags can print as black spines. After the shelf: any Markdown pages (an essay), an index with the
+specimen. Books with chosen tags can print as black spines, and chosen books
+get a block of the riso's second ink under the black. After the shelf: any Markdown pages (an essay), an index with the
 page each book stands on, and a colophon, which lands on the last page.
 The cover is a separate sheet (back, spine, front) showing every book at
 once. See RULES.md "Bjook".
@@ -26,7 +27,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from book import (alias, all_faces, book_families, die, document, page_css, rasterize,
-                  render, snapshot, stamp_now, to_pt, write_preview)
+                  render, smarten, snapshot, stamp_now, to_pt, write_preview)
 from paper import markdown
 
 DEFAULTS = {
@@ -47,6 +48,9 @@ DEFAULTS = {
         "edge": "0.2in",            # where the first spine starts, from the outside edge
         "min_spine": "6.5pt",       # the thinnest a spine is drawn
         "black_tags": [],           # books with any of these tags print as black spines
+        "second_spines": [],        # books (by slug) with a solid block of the [riso] second
+                                    # ink under the spine; the outline and title still print in
+                                    # black, over it, so the drums needn't register exactly
         "back": ["essay.md", "index", "colophon.md"],   # after the shelf, in order;
                                     # "index" is the index, an image gets a page to itself,
                                     # and the last one ends the book
@@ -130,6 +134,9 @@ def catalogue(root, cfg):
             die(f"{b.get('title') or b.get('slug') or 'a book'} has no {', '.join(missing)}")
         if b.get("face") not in cfg["faces"]:
             die(f"{b['title']}: face {b.get('face')!r} has no [faces.{b.get('face')}] in book.toml")
+        if cfg["shelf"]["smart_quotes"]:                    # catalogs type straight marks
+            b["title"] = smarten(b["title"])
+            b["authors"] = [smarten(a) for a in b.get("authors") or []]
     return data if isinstance(data, dict) else {}, books
 
 
@@ -160,6 +167,10 @@ class Shelf:
         self.page_of = {}
         black = set(cfg["shelf"]["black_tags"])
         self.black = {b["slug"] for b in books if black & set(b.get("tags", []))}
+        self.second = set(cfg["shelf"]["second_spines"])
+        missing = self.second - {b["slug"] for b in books}
+        if missing:
+            die(f"[shelf] second_spines: no book with the slug {', '.join(sorted(missing))}")
 
     def width(self, b):
         return max(self.min, b["thickness"] * self.scale * 72)
@@ -187,8 +198,10 @@ class Shelf:
         author = b["authors"][0].split()[-1] if b.get("authors") else ""
         room = h - 8 - len(author) * per_letter
         e = html.escape
-        return (f'<div class="spine{" black" if b["slug"] in self.black else ""}" '
-                f'style="left:{x:.2f}pt;top:{y - h:.2f}pt;width:{w:.2f}pt;height:{h:.2f}pt">'
+        kind = " black" if b["slug"] in self.black else ""
+        fill = '<div class="fill ink2"></div>' if b["slug"] in self.second else ""
+        return (f'<div class="spine{kind}" '
+                f'style="left:{x:.2f}pt;top:{y - h:.2f}pt;width:{w:.2f}pt;height:{h:.2f}pt">{fill}'
                 f'<div class="label" style="width:{h:.2f}pt;height:{w:.2f}pt;'
                 f'transform:translate({w:.2f}pt,0) rotate(90deg);padding:0 {pad}pt;'
                 f"font-family:'{f['family']}';font-weight:{f.get('weight', 400)};font-size:{size:.2f}pt\">"
@@ -400,6 +413,7 @@ def cover_html(cfg, root, books, shelf, date, pages, faces):
 
     def pack(s):
         sh = Shelf(cfg, books, s, 1.2)
+        sh.second = set()           # the cover is one ink; second-ink spines are for the pages
         rows = sh.rows(W + 6, start=-6)
         return sh, rows, sum(max(b["height"] for b in r) * s * 72 + gap for r in rows)
     lo, hi = 0.05, 0.5
@@ -474,7 +488,8 @@ def separations(root, cfg, page, out):
     second = page.replace("</style>", ":root { --ink: transparent; }\n"
                           "body * { visibility: hidden; } .ink2, .ink2 * { visibility: visible; }\n</style>", 1)
     # The look: the second ink in its colour, images swapped for tinted copies.
-    look = page.replace("</style>", f".running {{ color: {colour}; }}\n</style>", 1)
+    look = page.replace("</style>", f".running {{ color: {colour}; }}\n"
+                        f".spine .fill {{ background: {colour}; }}\n</style>", 1)
     look = re.sub(r'(<img class="[^"]*\bink2\b[^"]*" src=")([^"]+)"',
                   lambda m: f'{m[1]}{tinted(root, out, m[2], colour)}"', look)
     files = {}
@@ -686,7 +701,8 @@ def build(root, cfg, snap=None, quiet=False):
     write_preview(cfg, out, rasterize(pdf, out / "pages", dpi=72), stamp, spec)
     if not quiet:
         print(f"-> {pdf}\n   {total} pages: {len(books)} books on {n_rows} shelves, "
-              f"{len(shelf.black)} black spines" + (", 1 blank page before the last" if blanks else "")
+              f"{len(shelf.black)} black spines" +
+              (f", {len(shelf.second)} in the second ink" if shelf.second else "") + (", 1 blank page before the last" if blanks else "")
               + (f", the running line at {run[2]:.1f}pt" if run else ""))
         print(f"-> {spreads_file}\n   the same, as spreads, for reading on screen and sharing")
         for key, f in masters.items():

@@ -34,6 +34,9 @@ em { font-style: italic; }
   border: 0.5pt solid #000; border-bottom: 0; background: #fff;
 }
 .spine.black { background: #000; color: #fff; }
+/* a second-ink block under a spine, overprinted by its outline and title;
+   black on its own drum's master, the ink's colour in the look */
+.spine .fill { position: absolute; inset: 0; background: #000; }
 .label {
   position: absolute; top: 0; left: 0; transform-origin: 0 0; box-sizing: border-box;
   display: flex; justify-content: space-between; align-items: center;
